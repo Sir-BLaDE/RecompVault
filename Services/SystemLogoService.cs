@@ -11,7 +11,9 @@ namespace RecompVault.Services;
 public static class SystemLogoService
 {
     private static readonly HttpClient Http = Create();
-    private static readonly string CacheDir = Path.Combine(ConfigService.Dir, "system_logos");
+    private static readonly string CacheDir = Path.Combine(ConfigService.Dir, "system_logos_v2");
+    /// <summary>Logos propios del usuario: %APPDATA%\RecompVault\system_logos_custom\&lt;SISTEMA&gt;.png (tienen prioridad).</summary>
+    public static readonly string CustomDir = Path.Combine(ConfigService.Dir, "system_logos_custom");
     /// <summary>Sistemas ya intentados en esta sesión (evita repetir descargas fallidas en cada filtro).</summary>
     private static readonly HashSet<string> Attempted = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, ImageSource> Loaded = new(StringComparer.OrdinalIgnoreCase);
@@ -19,25 +21,32 @@ public static class SystemLogoService
     // Curated: prefer official wordmark/logos (con letras). Using Commons redirect for reliable thumbnails.
     private static readonly Dictionary<string, string[]> LogoSources = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["3DS"] = new[] { Commons("Nintendo_3DS_logo.svg"), Wiki("Nintendo_3DS") },
-        ["Arcade"] = new[] { Commons("MAMELogo.svg"), Wiki("Arcade_game") },
-        ["DS"] = new[] { Commons("Nintendo_DS_Logo.svg"), Wiki("Nintendo_DS") },
-        ["GBA"] = new[] { Commons("Gameboy_advance_logo.svg"), Wiki("Game_Boy_Advance") },
-        ["GC"] = new[] { Commons("Nintendo_GameCube_Official_Logo.svg"), Commons("Nintendo_Gamecube_Logo.svg"), Wiki("Nintendo_GameCube") },
-        ["MEGADRIVE"] = new[] { Wiki("Sega_Mega_Drive"), Commons("Sega_genesis_logo.svg") },
-        ["N64"] = new[] { Commons("Nintendo_64_wordmark.svg"), Wiki("Nintendo_64") },
-        ["PC"] = new[] { Commons("Windows_logo_-_2012.svg"), Wiki("Microsoft_Windows") },
-        ["PCE"] = new[] { Commons("TurboGrafx16logo.jpg"), Wiki("TurboGrafx-16") },
-        ["PS2"] = new[] { Commons("PlayStation_2_logo.svg"), Wiki("PlayStation_2") },
-        ["PS4"] = new[] { Commons("PlayStation_4_logo_and_wordmark.svg"), Wiki("PlayStation_4") },
-        ["PSX"] = new[] { Commons("Playstation_logo_colour.svg"), Commons("PlayStation_logo.svg"), Wiki("PlayStation_(console)") },
-        ["SNES"] = new[] { Commons("Super_Nintendo_Entertainment_System_logo.svg"), Commons("Nintendo_Super_Famicom_logo.svg"), Wiki("Super_Nintendo_Entertainment_System") },
-        ["SWITCH"] = new[] { Commons("NintendoSwitchLogo.svg"), Wiki("Nintendo_Switch") },
-        ["SWITCH 2"] = new[] { Commons("Nintendo_Switch_2_logo.svg"), Wiki("Nintendo_Switch_2") },
-        ["WII"] = new[] { Commons("Wii.svg"), Wiki("Wii") },
-        ["WIIU"] = new[] { Commons("WiiU.svg"), Wiki("Wii_U") },
-        ["X360"] = new[] { Commons("Xbox_360_wordmark.svg"), Commons("Xbox_360_logo.svg"), Wiki("Xbox_360") },
-        ["XBOX"] = new[] { Commons("Xbox_logo_(2005).svg"), Commons("Xbox_2005.svg"), Wiki("Xbox_(console)") },
+        ["3DS"] = new[] { Commons("Nintendo_3DS_logo.svg") },
+        ["Arcade"] = new[] { Commons("MAMELogo.svg") },
+        ["DS"] = new[] { Commons("Nintendo_DS_Logo.svg") },
+        ["GBA"] = new[] { Commons("Gameboy_advance_logo.svg") },
+        ["GC"] = new[] { Commons("Nintendo_GameCube_Official_Logo.svg"), Commons("Nintendo_Gamecube_Logo.svg") },
+        ["MEGADRIVE"] = new[] { Commons("Mega_Drive_Logo.svg"), Commons("Sega_genesis_logo.svg") },
+        ["N64"] = new[] { Commons("Nintendo_64_wordmark.svg") },
+        ["PC"] = new[] { Commons("Windows_logo_-_2012.svg") },
+        ["PCE"] = new[] { Commons("TurboGrafx-16_Logo.svg"), Commons("PC_Engine_logo.svg"), Commons("TurboGrafx16logo.jpg") },
+        ["PS2"] = new[] { Commons("PlayStation_2_logo.svg") },
+        ["PS4"] = new[] { Commons("PlayStation_4_logo_and_wordmark.svg") },
+        ["PSX"] = new[] { Commons("Playstation_logo_colour.svg"), Commons("PlayStation_logo.svg") },
+        ["SNES"] = new[] { Commons("Super_Nintendo_Entertainment_System_logo.svg"), Commons("Nintendo_Super_Famicom_logo.svg") },
+        ["SWITCH"] = new[] { Commons("NintendoSwitchLogo.svg") },
+        ["SWITCH 2"] = new[] { Commons("Nintendo_Switch_2_logo.svg") },
+        ["WII"] = new[] { Commons("Wii.svg") },
+        ["WIIU"] = new[] { Commons("WiiU.svg") },
+        ["X360"] = new[] { Commons("Xbox_360_wordmark.svg"), Commons("Xbox_360_logo.svg") },
+        ["DREAMCAST"] = new[] { Commons("Dreamcast_logo.svg") },
+        ["SATURN"] = new[] { Commons("Sega_Saturn_Logo.svg") },
+        ["PS3"] = new[] { Commons("PlayStation_3_logo_(2009).svg"), Commons("PlayStation3Logo.svg") },
+        ["PSP"] = new[] { Commons("PSP_Logo.svg") },
+        ["NES"] = new[] { Commons("NES_logo.svg") },
+        ["GB"] = new[] { Commons("Game_Boy_logo.svg") },
+        ["GBC"] = new[] { Commons("Game_Boy_Color_logo.svg") },
+        ["XBOX"] = new[] { Commons("Xbox_logo_(2005).svg"), Commons("Xbox_2005.svg") },
     };
 
     private static string Commons(string file) => "commons:" + file;
@@ -53,6 +62,12 @@ public static class SystemLogoService
     public static void Apply(SystemItem item)
     {
         if (item.Name == "Todos") { item.HasLogo = false; return; }
+        // logo propio del usuario
+        foreach (var ext in new[] { ".png", ".webp", ".jpg" })
+        {
+            var custom = Path.Combine(CustomDir, Sanitize(item.Name) + ext);
+            if (File.Exists(custom)) { Set(item, Load(custom)); return; }
+        }
         lock (Loaded)
         {
             if (Loaded.TryGetValue(item.Name, out var cached)) { Set(item, cached); return; }
@@ -103,7 +118,7 @@ public static class SystemLogoService
                 if (s.StartsWith("commons:", StringComparison.Ordinal))
                 {
                     var file = s.Substring("commons:".Length);
-                    var url = $"https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/{Uri.EscapeDataString(file)}&width=320";
+                    var url = $"https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/{Uri.EscapeDataString(file)}&width=640";
                     using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
                     if (resp.IsSuccessStatusCode) return url;
                 }
@@ -121,12 +136,13 @@ public static class SystemLogoService
         return null;
     }
 
-    private static ImageSource? Load(string path) => ImageLoader.Load(path, 96);
+    private static ImageSource? Load(string path) => ImageLoader.Load(path, 480);
 
     private static void Set(SystemItem item, ImageSource? img)
     {
         if (img == null) return;
-        UiThread.Run(() => { item.LogoImage = img; item.HasLogo = true; });
+        var alpha = SystemItem.HasAlpha(img);
+        UiThread.Run(() => { item.LogoImage = img; item.LogoHasAlpha = alpha; item.HasLogo = true; });
     }
 
     private static string Sanitize(string s)

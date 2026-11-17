@@ -46,8 +46,84 @@ public class RangeObservableCollection<T> : ObservableCollection<T>
     }
 }
 
+/// <summary>Una fila de la cuadrícula virtualizada (solo se dibujan las filas visibles).</summary>
+public sealed class GameRow
+{
+    public List<GameEntry> Items { get; init; } = new();
+}
+
 public class MainViewModel : INotifyPropertyChanged
 {
+    /// <summary>Filas de la cuadrícula (VisibleGames troceado según el ancho de la ventana).</summary>
+    public RangeObservableCollection<GameRow> Rows { get; } = new();
+
+    private int _columns = 5;
+    /// <summary>Tarjetas por fila; lo fija la vista al cambiar de tamaño.</summary>
+    public int Columns
+    {
+        get => _columns;
+        set { var v = Math.Max(1, value); if (v == _columns) return; _columns = v; OnPropertyChanged(); RebuildRows(); }
+    }
+
+    private GameEntry? _selectedGame;
+    public GameEntry? SelectedGame
+    {
+        get => _selectedGame;
+        set
+        {
+            if (ReferenceEquals(_selectedGame, value)) return;
+            if (_selectedGame != null) _selectedGame.IsSelected = false;
+            _selectedGame = value;
+            if (value != null) value.IsSelected = true;
+            OnPropertyChanged();
+            var idx = value == null ? -1 : VisibleGames.IndexOf(value);
+            if (idx >= 0) ScrollToRowRequested?.Invoke(idx / Columns);
+        }
+    }
+
+    /// <summary>La vista desplaza la cuadrícula hasta esta fila.</summary>
+    public event Action<int>? ScrollToRowRequested;
+
+    private bool _isCouchMode;
+    /// <summary>Modo sofá: pantalla completa, interfaz simplificada y navegación con mando.</summary>
+    public bool IsCouchMode { get => _isCouchMode; set { _isCouchMode = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsDeskMode)); } }
+    public bool IsDeskMode => !IsCouchMode;
+
+    private void RebuildRows()
+    {
+        var rows = new List<GameRow>();
+        for (int i = 0; i < VisibleGames.Count; i += Columns)
+            rows.Add(new GameRow { Items = VisibleGames.Skip(i).Take(Columns).ToList() });
+        Rows.ReplaceAll(rows);
+        if (SelectedGame != null && !VisibleGames.Contains(SelectedGame)) SelectedGame = null;
+    }
+
+    /// <summary>Mueve la selección (teclado/mando). dx = columnas, dy = filas.</summary>
+    public void MoveSelection(int dx, int dy)
+    {
+        if (VisibleGames.Count == 0) return;
+        var idx = SelectedGame == null ? -1 : VisibleGames.IndexOf(SelectedGame);
+        if (idx < 0) { SelectedGame = VisibleGames[0]; return; }
+        var next = idx + dx + dy * Columns;
+        if (dy != 0 && (next < 0 || next >= VisibleGames.Count))
+            next = dy > 0 ? Math.Min(VisibleGames.Count - 1, idx + (VisibleGames.Count - 1 - idx < Columns ? VisibleGames.Count - 1 - idx : Columns)) : Math.Max(0, idx % Columns);
+        SelectedGame = VisibleGames[Math.Clamp(next, 0, VisibleGames.Count - 1)];
+    }
+
+    /// <summary>Sistema anterior/siguiente (LB/RB o RePág/AvPág).</summary>
+    public void CycleSystem(int delta)
+    {
+        if (Systems.Count == 0) return;
+        var i = Systems.IndexOf(SelectedSystem);
+        SelectedSystem = Systems[(i + delta + Systems.Count) % Systems.Count];
+        if (VisibleGames.Count > 0) SelectedGame = VisibleGames[0];
+    }
+
+    public void LaunchSelected() { if (SelectedGame is { } g && g.CanLaunch) LaunchCommand.Execute(g); }
+    public void ToggleFavoriteSelected() { if (SelectedGame is { } g) ToggleFavoriteCommand.Execute(g); }
+    public void DetailsSelected() { if (SelectedGame is { } g) ShowDetectionCommand.Execute(g); }
+
+    public SystemItem? HeroSystem => SelectedSystem;
     public RangeObservableCollection<GameEntry> AllGames { get; } = new();
     public RangeObservableCollection<GameEntry> VisibleGames { get; } = new();
     public RangeObservableCollection<SystemItem> Systems { get; } = new();
@@ -920,10 +996,13 @@ public class MainViewModel : INotifyPropertyChanged
     {
         var current = _selectedSystem?.Name ?? "Todos";
         var pool = AllGames.Where(g => ShowHidden || !g.IsHidden).ToList();
-        var items = new List<SystemItem> { SystemItem.FromName("Todos", pool.Count) };
+        var all = SystemItem.FromName("Todos", pool.Count);
+        all.UpdateCount = pool.Count(g => g.HasUpdate);
+        var items = new List<SystemItem> { all };
         foreach (var grp in pool.GroupBy(g => g.System, StringComparer.OrdinalIgnoreCase).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
             var item = SystemItem.FromName(grp.Key, grp.Count());
+            item.UpdateCount = grp.Count(g => g.HasUpdate);
             SystemLogoService.Apply(item);
             items.Add(item);
         }
@@ -960,7 +1039,9 @@ public class MainViewModel : INotifyPropertyChanged
             _ => q.OrderBy(g => g.System, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase),
         };
         VisibleGames.ReplaceAll(q.ToList());
+        RebuildRows();
         OnPropertyChanged(nameof(HasNoVisibleGames));
+        OnPropertyChanged(nameof(HeroSystem));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

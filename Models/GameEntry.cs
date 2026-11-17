@@ -17,7 +17,18 @@ public class GameEntry : INotifyPropertyChanged
     public bool HasRecompName => !string.IsNullOrWhiteSpace(RecompName) && !RecompName.Equals(Name, StringComparison.OrdinalIgnoreCase);
 
     private string _system = "";
-    public string System { get => _system; set { if (Set(ref _system, value)) OnPropertyChanged(nameof(SystemInitial)); } }
+    public string System
+    {
+        get => _system;
+        set
+        {
+            if (!Set(ref _system, value)) return;
+            OnPropertyChanged(nameof(SystemInitial));
+            var info = SystemInfo.For(value);
+            SystemColor = info.Color1; SystemColor2 = info.Color2; SystemShort = info.Short;
+            OnPropertyChanged(nameof(SystemColor)); OnPropertyChanged(nameof(SystemColor2)); OnPropertyChanged(nameof(SystemShort));
+        }
+    }
 
     private string _folderPath = "";
     public string FolderPath { get => _folderPath; set => Set(ref _folderPath, value); }
@@ -89,7 +100,30 @@ public class GameEntry : INotifyPropertyChanged
     public string SystemInitial => string.IsNullOrWhiteSpace(System) ? "?" : System[..1].ToUpperInvariant();
 
     private ImageSource? _coverImage;
-    public ImageSource? CoverImage { get => _coverImage; set { if (Set(ref _coverImage, value)) OnPropertyChanged(nameof(HasCover)); } }
+    public ImageSource? CoverImage
+    {
+        get => _coverImage;
+        set
+        {
+            if (!Set(ref _coverImage, value)) return;
+            OnPropertyChanged(nameof(HasCover));
+            // iconos cuadrados (Quiver) se muestran enteros, no recortados
+            var square = value is System.Windows.Media.Imaging.BitmapSource b && b.PixelHeight > 0 && b.PixelWidth / (double)b.PixelHeight > 0.85;
+            if (square != _coverIsSquare) { _coverIsSquare = square; OnPropertyChanged(nameof(CoverIsSquare)); OnPropertyChanged(nameof(CoverIsPoster)); }
+        }
+    }
+    private bool _coverIsSquare;
+    public bool CoverIsSquare => HasCover && _coverIsSquare;
+    public bool CoverIsPoster => HasCover && !_coverIsSquare;
+
+    private bool _isSelected;
+    /// <summary>Seleccionado con teclado/mando.</summary>
+    public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
+
+    /// <summary>Colores de marca del sistema (#RRGGBB) para chips y fondos.</summary>
+    public string SystemColor { get; set; } = "#5B6B86";
+    public string SystemColor2 { get; set; } = "#141A26";
+    public string SystemShort { get; set; } = "";
 
     private ImageSource? _logoImage;
     public ImageSource? LogoImage { get => _logoImage; set { if (Set(ref _logoImage, value)) OnPropertyChanged(nameof(HasLogo)); } }
