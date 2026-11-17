@@ -87,7 +87,7 @@
                         <CheckBox Content="Mostrar ocultos" IsChecked="{Binding ShowHidden}" Foreground="{StaticResource TextBrush}" Margin="0,0,0,8"/>
                         <DockPanel>
                             <TextBlock Text="Orden" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0" DockPanel.Dock="Left"/>
-                            <ComboBox ItemsSource="{Binding SortModes}" SelectedItem="{Binding SortMode}" Padding="6,3"/>
+                            <ComboBox ItemsSource="{Binding SortModes}" SelectedItem="{Binding SortMode}" Padding="8,4,24,4"/>
                         </DockPanel>
                     </StackPanel>
                     <ListBox Grid.Row="3" ItemsSource="{Binding Systems}" SelectedItem="{Binding SelectedSystem}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">

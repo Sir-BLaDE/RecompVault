@@ -19,7 +19,7 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <ComboBox x:Name="SourceBox" Grid.Column="0" Margin="0,0,8,0" SelectedIndex="0" Padding="8,6">
+            <ComboBox x:Name="SourceBox" Grid.Column="0" Margin="0,0,8,0" SelectedIndex="0" Padding="8,6,24,6">
                 <ComboBoxItem Content="SteamGridDB" Tag="steamgriddb"/>
                 <ComboBoxItem Content="RAWG" Tag="rawg"/>
                 <ComboBoxItem Content="Libretro" Tag="libretro"/>
