@@ -130,6 +130,8 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand ShowDetectionCommand { get; }
     public ICommand UndoUpdateCommand { get; }
     public ICommand InstallVersionCommand { get; }
+    public ICommand RepairCommand { get; }
+    public ICommand ReviewDetectionCommand { get; }
 
     public MainViewModel()
     {
@@ -166,7 +168,60 @@ public class MainViewModel : INotifyPropertyChanged
         ShowDetectionCommand = new RelayCommand(o => { if (o is GameEntry g) ShowDetection(g); });
         UndoUpdateCommand = new RelayCommand(o => { if (o is GameEntry g) UndoUpdate(g); }, o => o is GameEntry g && g.HasUndo && !g.IsUpdating);
         InstallVersionCommand = new RelayCommand(o => { if (o is GameEntry g) InstallVersion(g); }, o => o is GameEntry g && !g.IsUpdating);
+        RepairCommand = new RelayCommand(o => { if (o is GameEntry g) Repair(g); }, o => o is GameEntry g && !g.IsUpdating);
+        ReviewDetectionCommand = new RelayCommand(_ => ReviewDetection());
         RescanCommand = new RelayCommand(_ => Rescan());
+    }
+
+    private void Repair(GameEntry g)
+    {
+        if (string.IsNullOrWhiteSpace(g.Repository)) { InstallVersion(g); return; }
+        if (g.InstalledUnknown)
+        {
+            DialogService.Info("Reparar", $"No se sabe qué versión de \"{g.Name}\" está instalada, así que no se puede reinstalar \"la misma\".\n\nElige la versión a mano en la lista que se abre a continuación.");
+            InstallVersion(g);
+            return;
+        }
+        var dlg = new VersionPickerDialog(g, Config, preselectTag: g.InstalledVersion, installText: "Reinstalar")
+        { Owner = ActiveOwner(), Title = $"Reparar (reinstalar {g.InstalledVersion}) — {g.Name}" };
+        if (dlg.ShowDialog() != true || dlg.Choice == null) return;
+        StartUpdate(g, dlg.Choice, pin: dlg.Pin ? true : (g.IsPinned ? null : false));
+    }
+
+    /// <summary>Ventana activa (para que los diálogos abiertos desde otro diálogo queden encima).</summary>
+    private static System.Windows.Window? ActiveOwner()
+    {
+        var app = System.Windows.Application.Current;
+        return app?.Windows.OfType<System.Windows.Window>().FirstOrDefault(w => w.IsActive && w.IsVisible) ?? app?.MainWindow;
+    }
+
+    private void ReviewDetection()
+    {
+        var dlg = new ReviewDialog(this) { Owner = ActiveOwner() };
+        dlg.ShowDialog();
+    }
+
+    /// <summary>Abre la ventana de detección de un juego (también desde la revisión en bloque).</summary>
+    public void OpenDetection(GameEntry g) => ShowDetection(g);
+
+    /// <summary>Convierte un vínculo detectado (p.ej. aproximado) en uno manual: pasa a ser "seguro".</summary>
+    public void ConfirmLink(GameEntry g)
+    {
+        if (string.IsNullOrWhiteSpace(g.Repository)) return;
+        ConfigService.Update(Config, c => c.LinkOverrides[g.FolderPath] = new LinkOverride
+        {
+            QuiverFolderName = string.IsNullOrWhiteSpace(g.QuiverFolderName) ? null : g.QuiverFolderName,
+            Repository = g.Repository, Provider = g.Provider, AssetFilter = g.AssetFilter ?? ""
+        });
+        g.LinkSource = "Manual: vínculo confirmado";
+    }
+
+    public void UnlinkManually(GameEntry g)
+    {
+        ConfigService.Update(Config, c => c.LinkOverrides[g.FolderPath] = new LinkOverride { Unlinked = true });
+        QuiverService.Unlink(g);
+        g.LinkSource = "Manual: sin vincular";
+        RaiseUpdateCounts();
     }
 
     private void InstallVersion(GameEntry g)
@@ -176,7 +231,7 @@ public class MainViewModel : INotifyPropertyChanged
             DialogService.Info("Sin repositorio", $"\"{g.Name}\" no está vinculado a ningún repositorio.\n\nVincúlalo primero con ℹ (Detección): elige la app de Quiver o escribe propietario/repositorio.");
             return;
         }
-        var dlg = new VersionPickerDialog(g, Config) { Owner = System.Windows.Application.Current?.MainWindow };
+        var dlg = new VersionPickerDialog(g, Config) { Owner = ActiveOwner() };
         if (dlg.ShowDialog() != true || dlg.Choice == null) return;
         StartUpdate(g, dlg.Choice, pin: dlg.Pin);
     }
@@ -186,7 +241,7 @@ public class MainViewModel : INotifyPropertyChanged
     private async void ShowDetection(GameEntry g)
     {
         var lib = QuiverService.Load(Config);
-        var dlg = new DetectionDialog(g, Config, lib) { Owner = System.Windows.Application.Current?.MainWindow };
+        var dlg = new DetectionDialog(g, Config, lib) { Owner = ActiveOwner() };
         if (dlg.ShowDialog() != true) return;
         if (dlg.UndoRequested) { UndoUpdate(g); return; }
         if (dlg.InstallVersionRequested)
@@ -240,6 +295,7 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 RaiseUpdateCounts();
                 ApplyFilter();
+                g.RaiseDetectionChanged();
                 Status = $"Detección actualizada: {g.Name} · {g.LinkSource}" + (string.IsNullOrWhiteSpace(g.Repository) ? "" : $" ({g.Repository})");
             });
         });
@@ -390,7 +446,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void SearchCover(GameEntry g)
     {
-        var dlg = new CoverPickerDialog(g, Config) { Owner = System.Windows.Application.Current?.MainWindow };
+        var dlg = new CoverPickerDialog(g, Config) { Owner = ActiveOwner() };
         Status = dlg.ShowDialog() == true && dlg.Applied ? $"Portada aplicada: {g.Name}" : $"Sin cambios de portada: {g.Name}";
     }
 
@@ -696,7 +752,15 @@ public class MainViewModel : INotifyPropertyChanged
             UiThread.Run(() =>
             {
                 RaiseUpdateCounts();
-                if (r == CheckResult.UpdateAvailable)
+                if (Config.ConfirmUpdatesWithChangelog && (r == CheckResult.UpdateAvailable || r == CheckResult.LatestOnly))
+                {
+                    // notas del release y paquete antes de instalar (se puede elegir otro)
+                    var dlg = new VersionPickerDialog(g, Config, preselectTag: g.LatestVersion, installText: "Actualizar")
+                    { Owner = ActiveOwner(), Title = $"Actualizar {g.Name}: {(g.InstalledUnknown ? "?" : g.InstalledVersion)} → {g.LatestVersion}" };
+                    if (dlg.ShowDialog() == true && dlg.Choice != null) StartUpdate(g, dlg.Choice, pin: dlg.Pin);
+                    else Status = "Actualización cancelada.";
+                }
+                else if (r == CheckResult.UpdateAvailable)
                 {
                     StartUpdate(g);
                 }
@@ -751,8 +815,17 @@ public class MainViewModel : INotifyPropertyChanged
     private void AutoUpdateAll()
     {
         if (_autoUpdating) return;
-        var list = AllGames.Where(g => g.HasUpdate && !string.IsNullOrWhiteSpace(g.UpdateAssetUrl) && !g.IsUpdating).ToList();
-        if (list.Count == 0) return;
+        var candidates = AllGames.Where(g => g.HasUpdate && !string.IsNullOrWhiteSpace(g.UpdateAssetUrl) && !g.IsUpdating).ToList();
+        // Solo vínculos seguros: una coincidencia aproximada puede ser otro juego.
+        var fuzzy = candidates.Where(g => g.IsFuzzyLink).ToList();
+        var list = candidates.Except(fuzzy).ToList();
+        if (fuzzy.Count > 0)
+            Log.Info($"Auto-update omitido en {fuzzy.Count} juegos con vínculo aproximado: {string.Join(", ", fuzzy.Select(x => x.Name))}");
+        if (list.Count == 0)
+        {
+            if (fuzzy.Count > 0) Status = $"{fuzzy.Count} actualizaciones no se instalan solas porque su vínculo es aproximado. Revísalas en 🔍 Revisar detección.";
+            return;
+        }
         _autoUpdating = true;
         Task.Run(async () =>
         {
@@ -771,7 +844,8 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 _autoUpdating = false;
                 RaiseUpdateCounts();
-                Status = $"Auto-actualización: {ok}/{list.Count} actualizados.";
+                Status = $"Auto-actualización: {ok}/{list.Count} actualizados." +
+                         (fuzzy.Count > 0 ? $" {fuzzy.Count} con vínculo aproximado sin tocar (revísalos en 🔍 Revisar detección)." : "");
                 if (failed.Count > 0) DialogService.Info("Auto-actualización", $"Actualizados {ok} de {list.Count}.\n\nFallidos:\n{string.Join("\n", failed.Take(10))}");
             });
         });

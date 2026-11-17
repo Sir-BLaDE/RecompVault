@@ -38,6 +38,12 @@ public class AppConfig
     public Dictionary<string, LinkOverride> LinkOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>Versiones fijadas (folderPath → tag): no se marcan como desactualizadas ni se auto-actualizan.</summary>
     public Dictionary<string, string> PinnedVersions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Patrones que nunca se sobrescriben al actualizar si ya existen (partidas, ajustes...).</summary>
+    public List<string> ProtectedPatterns { get; set; } = RecompVault.Core.GlobMatcher.DefaultProtected.ToList();
+    /// <summary>Patrones protegidos adicionales por juego (folderPath → "patrón; patrón").</summary>
+    public Dictionary<string, string> ProtectedByGame { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Al actualizar a mano, mostrar antes las notas del release y el paquete.</summary>
+    public bool ConfirmUpdatesWithChangelog { get; set; } = true;
 }
 
 public class LinkOverride
@@ -99,6 +105,8 @@ public static class ConfigService
         c.LastPlayed = new(c.LastPlayed ?? new(), StringComparer.OrdinalIgnoreCase);
         c.LinkOverrides = new(c.LinkOverrides ?? new(), StringComparer.OrdinalIgnoreCase);
         c.PinnedVersions = new(c.PinnedVersions ?? new(), StringComparer.OrdinalIgnoreCase);
+        c.ProtectedByGame = new(c.ProtectedByGame ?? new(), StringComparer.OrdinalIgnoreCase);
+        c.ProtectedPatterns ??= RecompVault.Core.GlobMatcher.DefaultProtected.ToList();
         if (c.UndoBackupsToKeep < 1) c.UndoBackupsToKeep = 1;
         c.Favorites = c.Favorites.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         c.Hidden = c.Hidden.Distinct(StringComparer.OrdinalIgnoreCase).ToList();

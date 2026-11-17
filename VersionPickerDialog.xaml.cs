@@ -35,10 +35,15 @@ public partial class VersionPickerDialog : Window
     public UpdateService.InstallChoice? Choice { get; private set; }
     public bool Pin => PinBox.IsChecked == true;
 
-    public VersionPickerDialog(GameEntry g, AppConfig cfg)
+    private readonly string? _preselect;
+
+    /// <param name="preselectTag">Versión a seleccionar al abrir (por defecto la última conocida).</param>
+    /// <param name="installText">Texto del botón de instalar.</param>
+    public VersionPickerDialog(GameEntry g, AppConfig cfg, string? preselectTag = null, string? installText = null)
     {
         InitializeComponent();
-        _g = g; _cfg = cfg;
+        _g = g; _cfg = cfg; _preselect = preselectTag;
+        if (!string.IsNullOrWhiteSpace(installText)) InstallBtn.Content = installText;
         SourceInitialized += (_, _) =>
         {
             try { int d = 1; var h = new WindowInteropHelper(this).Handle; if (DwmSetWindowAttribute(h, 20, ref d, 4) != 0) DwmSetWindowAttribute(h, 19, ref d, 4); } catch { }
@@ -80,7 +85,8 @@ public partial class VersionPickerDialog : Window
             ReleaseList.ItemsSource = rows;
             StatusText.Text = $"{rows.Count} releases. Elige uno y el paquete a instalar.";
             // preselección: el siguiente más nuevo que la instalada, o el primero
-            ReleaseList.SelectedItem = rows.FirstOrDefault(x => VersionUtil.Equivalent(x.Release.Tag, _g.LatestVersion)) ?? rows[0];
+            ReleaseList.SelectedItem = rows.FirstOrDefault(x => VersionUtil.Equivalent(x.Release.Tag, _preselect ?? _g.LatestVersion)) ?? rows[0];
+            ReleaseList.ScrollIntoView(ReleaseList.SelectedItem);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { StatusText.Text = "Error: " + ex.Message; }
@@ -90,7 +96,10 @@ public partial class VersionPickerDialog : Window
     {
         if (ReleaseList.SelectedItem is not ReleaseRow row) { InstallBtn.IsEnabled = false; return; }
         var r = row.Release;
-        var best = ReleaseAssetPicker.Pick(r.Assets, _g.AssetFilter, _g.InstalledAssetName);
+        // misma versión que la instalada: el mismo paquete exacto si existe (reparar)
+        var best = (VersionUtil.Equivalent(r.Tag, _g.InstalledVersion) && !string.IsNullOrWhiteSpace(_g.InstalledAssetName)
+                       ? r.Assets.FirstOrDefault(a => string.Equals(a.Name, _g.InstalledAssetName, StringComparison.OrdinalIgnoreCase)) : null)
+                   ?? ReleaseAssetPicker.Pick(r.Assets, _g.AssetFilter, _g.InstalledAssetName);
         var assets = r.Assets
             .Select(a => (a, score: ReleaseAssetPicker.Score(a.Name)))
             .OrderByDescending(x => ReferenceEquals(x.a, best)).ThenByDescending(x => x.score)

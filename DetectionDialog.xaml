@@ -61,6 +61,7 @@
                         <RowDefinition Height="Auto"/> <!-- 5 quiver -->
                         <RowDefinition Height="Auto"/> <!-- 6 repo -->
                         <RowDefinition Height="Auto"/> <!-- 7 filtro -->
+                        <RowDefinition Height="Auto"/> <!-- 7b protegidos -->
                         <RowDefinition Height="Auto"/> <!-- 8 sección -->
                         <RowDefinition Height="Auto"/> <!-- 9 versiones -->
                         <RowDefinition Height="Auto"/> <!-- 10 portada -->
@@ -115,16 +116,22 @@
                         <TextBlock Text="Opcional. Para repos con varios juegos (p.ej. vf2, SFA2-*.zip)." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,3,0,0"/>
                     </StackPanel>
 
-                    <TextBlock Grid.Row="8" Grid.ColumnSpan="2" Text="ESTADO" Style="{StaticResource Section}"/>
+                    <TextBlock Grid.Row="8" Text="Protegidos" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,6,12,0"/>
+                    <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,0,0,10">
+                        <TextBox x:Name="ProtectedBox" Padding="8,5" ToolTip="Patrones separados por ';' que nunca se sobrescriben al actualizar si ya existen. Ej.: *.ini; config/user.json; mods/**"/>
+                        <TextBlock x:Name="ProtectedHint" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
 
-                    <TextBlock Grid.Row="9" Text="Versiones" Style="{StaticResource Label}" VerticalAlignment="Top"/>
-                    <TextBlock Grid.Row="9" Grid.Column="1" x:Name="VersionText" TextWrapping="Wrap" Margin="0,0,0,10" FontFamily="Consolas, Segoe UI" FontSize="12"/>
+                    <TextBlock Grid.Row="9" Grid.ColumnSpan="2" Text="ESTADO" Style="{StaticResource Section}"/>
 
-                    <TextBlock Grid.Row="10" Text="Portada" Style="{StaticResource Label}" VerticalAlignment="Top"/>
-                    <TextBlock Grid.Row="10" Grid.Column="1" x:Name="CoverText" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="12"/>
+                    <TextBlock Grid.Row="10" Text="Versiones" Style="{StaticResource Label}" VerticalAlignment="Top"/>
+                    <TextBlock Grid.Row="10" Grid.Column="1" x:Name="VersionText" TextWrapping="Wrap" Margin="0,0,0,10" FontFamily="Consolas, Segoe UI" FontSize="12"/>
 
-                    <TextBlock Grid.Row="11" Text="Deshacer" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,4,12,0"/>
-                    <DockPanel Grid.Row="11" Grid.Column="1">
+                    <TextBlock Grid.Row="11" Text="Portada" Style="{StaticResource Label}" VerticalAlignment="Top"/>
+                    <TextBlock Grid.Row="11" Grid.Column="1" x:Name="CoverText" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="12"/>
+
+                    <TextBlock Grid.Row="12" Text="Deshacer" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,4,12,0"/>
+                    <DockPanel Grid.Row="12" Grid.Column="1">
                         <Button x:Name="UndoBtn" DockPanel.Dock="Right" Content="↶ Deshacer última actualización" Style="{StaticResource GhostButton}" Padding="10,4" Margin="8,0,0,0" Click="Undo_Click"/>
                         <TextBlock x:Name="UndoText" TextWrapping="Wrap" FontSize="12" VerticalAlignment="Center"/>
                     </DockPanel>

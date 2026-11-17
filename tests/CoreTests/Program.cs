@@ -126,6 +126,14 @@ try
 }
 finally { try { Directory.Delete(exeDir, true); } catch { } }
 
+// ---------------------------------------------------------------- ficheros protegidos
+Check("glob *.ini en subcarpeta", GlobMatcher.IsMatch(@"cfg\game.ini", "*.ini"));
+Check("glob carpeta/**", GlobMatcher.IsMatch("saves/slot1/a.bin", "saves/**") && GlobMatcher.IsMatch(@"Saves\x.dat", "saves/**"));
+Check("glob no coincide", !GlobMatcher.IsMatch("data/saves.bin", "saves/**") && !GlobMatcher.IsMatch("game.exe", "*.ini"));
+Check("glob ruta exacta", GlobMatcher.IsMatch("config/user.json", "config/user.json") && !GlobMatcher.IsMatch("other/config/user.json", "config/user.json"));
+Check("glob **/x", GlobMatcher.IsMatch("a/b/keys.txt", "**/keys.txt") && GlobMatcher.IsMatch("keys.txt", "**/keys.txt"));
+Check("parse patrones", GlobMatcher.Parse("*.ini; saves/**\n*.sav").Count == 3);
+
 // ---------------------------------------------------------------- deshacer actualización
 var undoDir = Path.Combine(Path.GetTempPath(), "rv_undo_" + Guid.NewGuid().ToString("N"));
 try

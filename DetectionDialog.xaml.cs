@@ -120,6 +120,9 @@ public partial class DetectionDialog : Window
         RepoBox.Text = _g.Repository ?? "";
         ProviderBox.SelectedIndex = string.Equals(_g.Provider, "gitlab", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         FilterBox.Text = _g.AssetFilter ?? "";
+        ProtectedBox.Text = ConfigService.Get(_cfg.ProtectedByGame, _g.FolderPath) ?? "";
+        lock (ConfigService.Sync)
+            ProtectedHint.Text = "Además de los globales: " + string.Join("; ", _cfg.ProtectedPatterns) + ". Se conservan si ya existen; los nuevos sí se copian.";
 
         // ---- estado
         VersionText.Text =
@@ -256,12 +259,17 @@ public partial class DetectionDialog : Window
         var name = NameBox.Text.Trim();
         var exe = (ExeBox.SelectedItem as Option)?.Value;
         var quiver = QuiverBox.SelectedItem as Option;
+        var protectedText = string.Join("; ", RecompVault.Core.GlobMatcher.Parse(ProtectedBox.Text));
 
         ConfigService.Update(_cfg, c =>
         {
             // nombre
             if (name.Length == 0) c.NameOverrides.Remove(_g.FolderPath);
             else if (name != _g.Name || c.NameOverrides.ContainsKey(_g.FolderPath)) c.NameOverrides[_g.FolderPath] = name;
+
+            // ficheros protegidos del juego
+            if (protectedText.Length == 0) c.ProtectedByGame.Remove(_g.FolderPath);
+            else c.ProtectedByGame[_g.FolderPath] = protectedText;
 
             // ejecutable
             if (exe == null || exe == Auto) c.LaunchOverrides.Remove(_g.FolderPath);

@@ -42,7 +42,7 @@ public class GameEntry : INotifyPropertyChanged
     public string NameSource { get; set; } = "";
     public string LaunchSource { get; set; } = "";
     private string _linkSource = "Sin vincular";
-    public string LinkSource { get => _linkSource; set => Set(ref _linkSource, value ?? ""); }
+    public string LinkSource { get => _linkSource; set { if (Set(ref _linkSource, value ?? "")) { OnPropertyChanged(nameof(IsFuzzyLink)); OnPropertyChanged(nameof(ReviewFlags)); } } }
 
     private bool _hasUndo;
     /// <summary>Hay una copia para deshacer la última actualización hecha por RecompVault.</summary>
@@ -115,7 +115,39 @@ public class GameEntry : INotifyPropertyChanged
     private void RaiseVersion()
     {
         OnPropertyChanged(nameof(HasUpdate)); OnPropertyChanged(nameof(HasVersionInfo));
-        OnPropertyChanged(nameof(VersionInfo)); OnPropertyChanged(nameof(InstalledUnknown));
+        OnPropertyChanged(nameof(VersionInfo)); OnPropertyChanged(nameof(InstalledUnknown)); OnPropertyChanged(nameof(ReviewFlags));
+    }
+
+    /// <summary>Notas del último release (para confirmar antes de actualizar).</summary>
+    public string? LatestNotes { get; set; }
+
+    /// <summary>El vínculo con Quiver/repositorio es una coincidencia aproximada (no se auto-actualiza).</summary>
+    public bool IsFuzzyLink => LinkSource.Contains("aproximada", StringComparison.OrdinalIgnoreCase);
+    /// <summary>La carpeta la actualizó la versión anterior de RecompVault (sin copia para deshacer).</summary>
+    private bool _updatedByOldVersion;
+    public bool UpdatedByOldVersion { get => _updatedByOldVersion; set { if (Set(ref _updatedByOldVersion, value)) OnPropertyChanged(nameof(ReviewFlags)); } }
+
+    /// <summary>Resumen de avisos para la revisión en bloque.</summary>
+    public string ReviewFlags
+    {
+        get
+        {
+            var f = new List<string>();
+            if (string.IsNullOrWhiteSpace(Repository)) f.Add("sin vincular");
+            else if (IsFuzzyLink) f.Add("≈ aproximado");
+            if (InstalledUnknown) f.Add("versión ?");
+            if (HasUpdate) f.Add("actualización");
+            if (IsPinned) f.Add("📌");
+            if (UpdatedByOldVersion) f.Add("RV antiguo");
+            if (string.IsNullOrWhiteSpace(LaunchPath)) f.Add("sin exe");
+            return string.Join(" · ", f);
+        }
+    }
+
+    /// <summary>Avisa de que algo del que depende ReviewFlags/Repository cambió.</summary>
+    public void RaiseDetectionChanged()
+    {
+        OnPropertyChanged(nameof(Repository)); OnPropertyChanged(nameof(ReviewFlags)); OnPropertyChanged(nameof(LinkSource));
     }
 
     public string? UpdateAssetUrl { get; set; }

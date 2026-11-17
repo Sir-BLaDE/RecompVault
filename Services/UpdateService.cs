@@ -99,6 +99,7 @@ public static class UpdateService
         public string? Url { get; set; }
         public DateTime CheckedUtc { get; set; }
         public bool NotFound { get; set; }
+        public string? Notes { get; set; }
     }
 
     private static Dictionary<string, CachedRelease> Cache
@@ -306,6 +307,8 @@ public static class UpdateService
         }
     }
 
+    private static string? Truncate(string? s, int max) => s == null ? null : s.Length <= max ? s : s[..max] + "\n…";
+
     private static CachedRelease? ParseGitHub(string json, bool includePre)
     {
         using var doc = JsonDocument.Parse(json);
@@ -324,6 +327,7 @@ public static class UpdateService
         var rel = new CachedRelease
         {
             Tag = c.Str("tag_name", "name") ?? "",
+            Notes = Truncate(c.Str("body"), 12000),
             Prerelease = c.TryGet("prerelease", out var pr) && pr.ValueKind == JsonValueKind.True
         };
         foreach (var a in c.Arr("assets"))
@@ -343,7 +347,7 @@ public static class UpdateService
         {
             var upcoming = r.TryGet("upcoming_release", out var u) && u.ValueKind == JsonValueKind.True;
             if (upcoming && !includePre) continue;
-            var rel = new CachedRelease { Tag = r.Str("tag_name", "name") ?? "", Prerelease = upcoming };
+            var rel = new CachedRelease { Tag = r.Str("tag_name", "name") ?? "", Prerelease = upcoming, Notes = Truncate(r.Str("description"), 12000) };
             var assets = r.Obj("assets");
             if (assets != null)
             {
@@ -379,6 +383,7 @@ public static class UpdateService
                 UiThread.RunSync(() =>
                 {
                     g.LatestVersion = res.Release.Tag;
+                    g.LatestNotes = res.Release.Notes;
                     g.UpdateAssetUrl = asset?.Url; g.UpdateAssetName = asset?.Name; g.UpdateAssetDigest = asset?.Digest;
                 });
             }
@@ -453,6 +458,7 @@ public static class UpdateService
         var tempRoot = Path.Combine(Path.GetTempPath(), "RecompVaultUpdate_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
         UndoSession? undo = null;
+        int kept = 0;
         try
         {
             var downloadPath = Path.Combine(tempRoot, name);
@@ -508,7 +514,7 @@ public static class UpdateService
                 Directory.CreateDirectory(extractDir);
                 var extracted = await ExtractAsync(downloadPath, lower, extractDir, ct).ConfigureAwait(false);
                 if (extracted != null) { undo.Rollback(); return new UpdateOutcome(false, extracted); }
-                var copyErr = ApplyExtracted(g.FolderPath, extractDir, undo);
+                var copyErr = ApplyExtracted(g.FolderPath, extractDir, undo, ProtectedPatternsFor(g, cfg), out kept);
                 if (copyErr != null)
                 {
                     var rb = undo.Rollback();
@@ -536,7 +542,8 @@ public static class UpdateService
                 g.RefreshLaunchState();
             });
             Log.Info($"Actualizado {g.Name} a {version} desde {url}");
-            return new UpdateOutcome(true, $"Actualizado: {g.Name} → {version}. Si no es el juego correcto: clic derecho → Deshacer última actualización.");
+            return new UpdateOutcome(true, $"Actualizado: {g.Name} → {version}" + (kept > 0 ? $" ({kept} ficheros protegidos conservados)" : "") +
+                ". Si no es el juego correcto: ↶ deshace la actualización.");
         }
         catch (OperationCanceledException)
         {
@@ -675,8 +682,20 @@ public static class UpdateService
     /// Copia lo extraído encima de la carpeta del juego (quitando carpetas envoltorio), apuntando cada
     /// fichero en la copia de deshacer. Al primer fallo se detiene (el llamador revierte). Devuelve error o null.
     /// </summary>
-    private static string? ApplyExtracted(string targetFolder, string extractDir, UndoSession undo)
+    /// <summary>Patrones protegidos efectivos: globales + los del juego.</summary>
+    public static List<string> ProtectedPatternsFor(GameEntry g, AppConfig cfg)
     {
+        lock (ConfigService.Sync)
+        {
+            var list = new List<string>(cfg.ProtectedPatterns ?? new());
+            if (cfg.ProtectedByGame.TryGetValue(g.FolderPath, out var own)) list.AddRange(GlobMatcher.Parse(own));
+            return list;
+        }
+    }
+
+    private static string? ApplyExtracted(string targetFolder, string extractDir, UndoSession undo, List<string> protectedPatterns, out int kept)
+    {
+        kept = 0;
         var source = extractDir;
         // como Quiver: solo se "desenvuelve" una carpeta única sin ficheros al lado
         for (int i = 0; i < 4; i++)
@@ -693,6 +712,12 @@ public static class UpdateService
         {
             var rel = Path.GetRelativePath(source, file);
             if (NeverOverwrite.Contains(rel)) continue;
+            // fichero protegido que ya existe: se conserva el del usuario
+            if (protectedPatterns.Count > 0 && File.Exists(Path.Combine(targetFolder, rel)) && GlobMatcher.IsMatch(rel, protectedPatterns))
+            {
+                kept++;
+                continue;
+            }
             if (rel.StartsWith(UndoSession.RootDirName, StringComparison.OrdinalIgnoreCase)) continue;
             var dest = Path.Combine(targetFolder, rel);
             try
