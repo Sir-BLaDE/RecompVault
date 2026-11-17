@@ -72,6 +72,22 @@ public static class UpdateService
         catch { return null; }
     }
 
+    /// <summary>
+    /// installed-build.txt con el formato de la versión antigua de RecompVault ("paquete" + "versión" en vez de
+    /// "paquete" + "sha256"): esa carpeta la actualizó el RecompVault anterior, que no guardaba copia para deshacer.
+    /// </summary>
+    public static bool UpdatedByOldRecompVault(string gameFolder)
+    {
+        try
+        {
+            var p = Path.Combine(gameFolder, "installed-build.txt");
+            if (!File.Exists(p) || new FileInfo(p).Length > 4096) return false;
+            var lines = File.ReadAllLines(p).Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
+            return lines.Length >= 2 && !(lines[1].Length == 64 && lines[1].All(Uri.IsHexDigit));
+        }
+        catch { return false; }
+    }
+
     // ------------------------------------------------------------------ caché de releases
 
     public sealed class CachedRelease
@@ -361,6 +377,7 @@ public static class UpdateService
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "RecompVaultUpdate_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
+        UndoSession? undo = null;
         try
         {
             var downloadPath = Path.Combine(tempRoot, name);
@@ -403,8 +420,11 @@ public static class UpdateService
                 return new UpdateOutcome(false, $"Es un instalador ({name}); se ha abierto para que lo completes. La versión se marcará cuando vuelvas a comprobar.", Manual: true);
             }
 
+            // A partir de aquí todo lo que se toca queda en la copia de deshacer; si algo falla se revierte.
+            undo = UndoSession.Begin(g.FolderPath, g.Name, g.InstalledVersion, version, name);
             if (lower.EndsWith(".exe"))
             {
+                undo.BeforeWrite(name);
                 File.Copy(downloadPath, Path.Combine(g.FolderPath, name), true);
             }
             else
@@ -412,21 +432,24 @@ public static class UpdateService
                 var extractDir = Path.Combine(tempRoot, "extract");
                 Directory.CreateDirectory(extractDir);
                 var extracted = await ExtractAsync(downloadPath, lower, extractDir, ct).ConfigureAwait(false);
-                if (extracted != null) return new UpdateOutcome(false, extracted);
-                var copyErr = ApplyExtracted(g.FolderPath, extractDir);
-                if (copyErr != null) return new UpdateOutcome(false, copyErr);
+                if (extracted != null) { undo.Rollback(); return new UpdateOutcome(false, extracted); }
+                var copyErr = ApplyExtracted(g.FolderPath, extractDir, undo);
+                if (copyErr != null)
+                {
+                    var rb = undo.Rollback();
+                    return new UpdateOutcome(false, copyErr + (rb == null ? " No se ha cambiado nada (se restauró lo anterior)." : " ATENCIÓN: " + rb));
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(version))
             {
                 // Mismos ficheros y formato que Quiver, para que ambos launchers vean la misma versión instalada.
-                try
-                {
-                    File.WriteAllText(Path.Combine(g.FolderPath, "version.txt"), version);
-                    File.WriteAllText(Path.Combine(g.FolderPath, "installed-build.txt"), $"{name}\n{sha}\n");
-                }
-                catch (Exception ex) { Log.Warn($"No se pudo escribir version.txt en {g.FolderPath}: {ex.Message}"); }
+                undo.BeforeWrite("version.txt");
+                File.WriteAllText(Path.Combine(g.FolderPath, "version.txt"), version);
+                undo.BeforeWrite("installed-build.txt");
+                File.WriteAllText(Path.Combine(g.FolderPath, "installed-build.txt"), $"{name}\n{sha}\n");
             }
+            undo.Commit(Math.Max(1, cfg.UndoBackupsToKeep));
             g.InstalledAssetName = name;
 
             var launch = ScannerService.ResolveLaunch(g.FolderPath, Path.GetFileName(g.FolderPath), cfg);
@@ -434,16 +457,22 @@ public static class UpdateService
             {
                 g.InstalledVersion = version;
                 if (!string.IsNullOrWhiteSpace(launch)) g.LaunchPath = launch;
+                g.HasUndo = true;
                 g.RefreshLaunchState();
             });
             Log.Info($"Actualizado {g.Name} a {version} desde {url}");
-            return new UpdateOutcome(true, $"Actualizado: {g.Name} → {version}");
+            return new UpdateOutcome(true, $"Actualizado: {g.Name} → {version}. Si no es el juego correcto: clic derecho → Deshacer última actualización.");
         }
-        catch (OperationCanceledException) { return new UpdateOutcome(false, "Cancelado."); }
+        catch (OperationCanceledException)
+        {
+            var rb = undo?.Rollback();
+            return new UpdateOutcome(false, "Cancelado." + (rb != null ? " " + rb : ""));
+        }
         catch (Exception ex)
         {
             Log.Error($"Error actualizando {g.Name}", ex);
-            return new UpdateOutcome(false, ex.Message);
+            var rb = undo?.Rollback();
+            return new UpdateOutcome(false, ex.Message + (rb == null ? (undo != null ? " (se restauró lo anterior)" : "") : " ATENCIÓN: " + rb));
         }
         finally
         {
@@ -567,8 +596,11 @@ public static class UpdateService
     private static readonly HashSet<string> NeverOverwrite = new(StringComparer.OrdinalIgnoreCase)
     { "version.txt", "installed-build.txt", "selected_executable.txt", "install-incomplete.txt", "LastPlayed.txt" };
 
-    /// <summary>Copia lo extraído encima de la carpeta del juego (quitando carpetas envoltorio). Devuelve error o null.</summary>
-    private static string? ApplyExtracted(string targetFolder, string extractDir)
+    /// <summary>
+    /// Copia lo extraído encima de la carpeta del juego (quitando carpetas envoltorio), apuntando cada
+    /// fichero en la copia de deshacer. Al primer fallo se detiene (el llamador revierte). Devuelve error o null.
+    /// </summary>
+    private static string? ApplyExtracted(string targetFolder, string extractDir, UndoSession undo)
     {
         var source = extractDir;
         // como Quiver: solo se "desenvuelve" una carpeta única sin ficheros al lado
@@ -582,30 +614,51 @@ public static class UpdateService
         if (!Directory.EnumerateFileSystemEntries(source).Any()) return "El paquete está vacío.";
 
         Directory.CreateDirectory(targetFolder);
-        var failed = new List<string>();
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             var rel = Path.GetRelativePath(source, file);
             if (NeverOverwrite.Contains(rel)) continue;
+            if (rel.StartsWith(UndoSession.RootDirName, StringComparison.OrdinalIgnoreCase)) continue;
             var dest = Path.Combine(targetFolder, rel);
             try
             {
+                undo.BeforeWrite(rel);
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                if (File.Exists(dest))
-                {
-                    var attr = File.GetAttributes(dest);
-                    if ((attr & FileAttributes.ReadOnly) != 0) File.SetAttributes(dest, attr & ~FileAttributes.ReadOnly);
-                }
                 File.Copy(file, dest, true);
             }
             catch (Exception ex)
             {
-                failed.Add(rel);
                 Log.Warn($"No se pudo copiar {rel}: {ex.Message}");
+                return $"No se pudo reemplazar {rel} (¿en uso?): {ex.Message}.";
             }
         }
-        return failed.Count == 0 ? null
-            : $"No se pudieron reemplazar {failed.Count} ficheros (¿en uso?): {string.Join(", ", failed.Take(3))}{(failed.Count > 3 ? "..." : "")}";
+        return null;
+    }
+
+    /// <summary>Deshace la última actualización hecha por RecompVault en esta carpeta.</summary>
+    public static UpdateOutcome UndoLastUpdate(GameEntry g, AppConfig cfg)
+    {
+        var running = RunningProcessesIn(g.FolderPath);
+        if (running.Count > 0) return new UpdateOutcome(false, $"Cierra el juego antes de deshacer ({string.Join(", ", running)}).");
+        var m = UndoStore.Latest(g.FolderPath);
+        if (m == null) return new UpdateOutcome(false, "No hay ninguna actualización que deshacer en esta carpeta.");
+        var err = UndoStore.RestoreLatest(g.FolderPath);
+        if (err != null) return new UpdateOutcome(false, err);
+
+        var installed = ReadInstalledVersion(g.FolderPath) ?? "";
+        var assetName = ReadInstalledAssetName(g.FolderPath);
+        var launch = ScannerService.ResolveLaunch(g.FolderPath, Path.GetFileName(g.FolderPath), cfg);
+        var hasMore = UndoStore.Latest(g.FolderPath) != null;
+        UiThread.RunSync(() =>
+        {
+            g.InstalledVersion = installed;
+            g.InstalledAssetName = assetName;
+            g.LaunchPath = launch;
+            g.HasUndo = hasMore;
+            g.RefreshLaunchState();
+        });
+        Log.Info($"Deshecha la actualización de {g.Name} ({m.FromVersion} ← {m.ToVersion})");
+        return new UpdateOutcome(true, $"Deshecha la actualización de {g.Name}: vuelve a {(string.IsNullOrWhiteSpace(m.FromVersion) ? "la versión anterior" : m.FromVersion)}.");
     }
 
     /// <summary>Procesos cuyo ejecutable está dentro de la carpeta del juego.</summary>

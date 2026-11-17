@@ -126,6 +126,56 @@ try
 }
 finally { try { Directory.Delete(exeDir, true); } catch { } }
 
+// ---------------------------------------------------------------- deshacer actualización
+var undoDir = Path.Combine(Path.GetTempPath(), "rv_undo_" + Guid.NewGuid().ToString("N"));
+try
+{
+    Directory.CreateDirectory(Path.Combine(undoDir, "data"));
+    File.WriteAllText(Path.Combine(undoDir, "game.exe"), "v1");
+    File.WriteAllText(Path.Combine(undoDir, "data", "a.bin"), "A1");
+    File.WriteAllText(Path.Combine(undoDir, "save.dat"), "partida");
+    File.WriteAllText(Path.Combine(undoDir, "version.txt"), "v1.0");
+
+    var s = UndoSession.Begin(undoDir, "Juego", "v1.0", "v2.0", "Juego-v2.zip");
+    foreach (var (rel, content) in new[] { ("game.exe", "v2"), (Path.Combine("data", "a.bin"), "A2"), (Path.Combine("nuevo", "sub", "b.bin"), "B"), ("version.txt", "v2.0") })
+    {
+        s.BeforeWrite(rel);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(undoDir, rel))!);
+        File.WriteAllText(Path.Combine(undoDir, rel), content);
+    }
+    s.Commit();
+    Check("tras actualizar: ficheros nuevos", File.ReadAllText(Path.Combine(undoDir, "game.exe")) == "v2" && File.Exists(Path.Combine(undoDir, "nuevo", "sub", "b.bin")));
+    Check("manifiesto disponible", UndoStore.Latest(undoDir)?.FromVersion == "v1.0");
+    Check("el escáner no ve la copia como ejecutable", LaunchPicker.Rank(undoDir, "Juego").All(c => !c.Path.Contains(UndoSession.RootDirName)));
+
+    var err = UndoStore.RestoreLatest(undoDir);
+    Check($"deshacer sin errores ({err})", err == null);
+    Check("exe original restaurado", File.ReadAllText(Path.Combine(undoDir, "game.exe")) == "v1");
+    Check("dato original restaurado", File.ReadAllText(Path.Combine(undoDir, "data", "a.bin")) == "A1");
+    Check("version.txt restaurado", File.ReadAllText(Path.Combine(undoDir, "version.txt")) == "v1.0");
+    Check("fichero creado eliminado y carpetas vacías fuera", !Directory.Exists(Path.Combine(undoDir, "nuevo")));
+    Check("partida intacta", File.ReadAllText(Path.Combine(undoDir, "save.dat")) == "partida");
+    Check("copia de deshacer eliminada", !Directory.Exists(Path.Combine(undoDir, UndoSession.RootDirName)));
+
+    // rollback de una actualización que falla a medias
+    var s2 = UndoSession.Begin(undoDir, "Juego", "v1.0", "v3.0", null);
+    s2.BeforeWrite("game.exe"); File.WriteAllText(Path.Combine(undoDir, "game.exe"), "v3");
+    s2.BeforeWrite("extra.dll"); File.WriteAllText(Path.Combine(undoDir, "extra.dll"), "x");
+    Check("rollback sin errores", s2.Rollback() == null);
+    Check("rollback deja el original", File.ReadAllText(Path.Combine(undoDir, "game.exe")) == "v1" && !File.Exists(Path.Combine(undoDir, "extra.dll")));
+
+    // poda: solo se guarda la última
+    for (int k = 0; k < 3; k++)
+    {
+        var sk = UndoSession.Begin(undoDir, "Juego", $"v{k}", $"v{k + 1}", null);
+        sk.BeforeWrite("game.exe"); File.WriteAllText(Path.Combine(undoDir, "game.exe"), $"v{k + 1}");
+        sk.Commit(keep: 1);
+    }
+    var lst = UndoStore.List(undoDir);
+    Check($"solo una copia guardada ({lst.Count}: {string.Join(",", lst.Select(x => Path.GetFileName(x.dir) + "=" + x.manifest.ToVersion))})", lst.Count == 1 && lst[0].manifest.ToVersion == "v3");
+}
+finally { try { Directory.Delete(undoDir, true); } catch { } }
+
 // ---------------------------------------------------------------- biblioteca Quiver simulada
 var tmp = Path.Combine(Path.GetTempPath(), "rv_test_" + Guid.NewGuid().ToString("N"));
 try

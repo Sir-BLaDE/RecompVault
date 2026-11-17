@@ -32,7 +32,7 @@ public static class QuiverService
         var hasCustomName = ConfigService.Get(cfg.NameOverrides, g.FolderPath) != null;
         if (app != null)
         {
-            if (allowRename && !hasCustomName && !string.IsNullOrWhiteSpace(app.Name)) g.Name = CleanQuiverName(app.Name);
+            if (allowRename && !hasCustomName && !string.IsNullOrWhiteSpace(app.Name)) { g.Name = CleanQuiverName(app.Name); g.NameSource = "Quiver (apps.json)"; }
             g.QuiverFolderName = app.FolderName;
             g.QuiverAppIconUrl = string.IsNullOrWhiteSpace(app.AppIconUrl) ? null : app.AppIconUrl;
             if (!string.IsNullOrWhiteSpace(app.CustomIconPath) && File.Exists(app.CustomIconPath)) g.QuiverLocalIconPath = app.CustomIconPath;
@@ -45,6 +45,36 @@ public static class QuiverService
         var repo = m.Repository;
         if (!string.IsNullOrWhiteSpace(repo)) { g.Repository = repo; g.Provider = m.Provider; }
         if (!string.IsNullOrWhiteSpace(m.AssetFilter)) g.AssetFilter = m.AssetFilter;
+        g.LinkSource = string.IsNullOrWhiteSpace(m.Kind) ? "Quiver" : m.Kind;
+    }
+
+    /// <summary>Quita el vínculo con Quiver/repositorio.</summary>
+    public static void Unlink(GameEntry g)
+    {
+        g.Repository = null; g.Provider = "github"; g.AssetFilter = null; g.Project = null;
+        g.QuiverFolderName = null; g.QuiverAppIconUrl = null; g.QuiverLocalIconPath = null;
+        g.UpdateAssetUrl = null; g.UpdateAssetName = null; g.UpdateAssetDigest = null;
+        g.LatestVersion = "";
+    }
+
+    /// <summary>Aplica el vínculo elegido a mano en la ventana "Detección" (tiene prioridad sobre lo automático).</summary>
+    public static void ApplyLinkOverride(GameEntry g, QuiverLibrary? lib, AppConfig cfg)
+    {
+        LinkOverride? ov;
+        lock (ConfigService.Sync) cfg.LinkOverrides.TryGetValue(g.FolderPath, out ov);
+        if (ov == null) return;
+        if (ov.Unlinked) { Unlink(g); g.LinkSource = "Manual: sin vincular"; return; }
+
+        var app = !string.IsNullOrWhiteSpace(ov.QuiverFolderName) ? lib?.AppByFolderName(ov.QuiverFolderName!) : null;
+        if (app != null || !string.IsNullOrWhiteSpace(ov.Repository)) Unlink(g);
+        if (app != null) Enrich(g, new QuiverMatch(app, lib!.CatalogFor(app), "Manual: app de Quiver elegida"), cfg);
+        if (!string.IsNullOrWhiteSpace(ov.Repository))
+        {
+            g.Repository = ov.Repository!.Trim().Trim('/');
+            g.Provider = string.IsNullOrWhiteSpace(ov.Provider) ? "github" : ov.Provider!.ToLowerInvariant();
+            g.LinkSource = app != null ? "Manual: app de Quiver + repositorio" : "Manual: repositorio";
+        }
+        if (ov.AssetFilter != null) g.AssetFilter = string.IsNullOrWhiteSpace(ov.AssetFilter) ? null : ov.AssetFilter.Trim();
     }
 
     /// <summary>Aplica la última versión conocida por Quiver (sin red). Nunca toca la instalada.</summary>

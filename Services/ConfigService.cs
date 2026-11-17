@@ -32,6 +32,21 @@ public class AppConfig
     public int UpdateCheckIntervalHours { get; set; } = 6;
     public bool IncludePrereleases { get; set; } = true;
     public string? GitHubToken { get; set; } // opcional: sube el límite de la API de 60 a 5000 peticiones/hora
+    /// <summary>Copias de deshacer que se guardan por juego (solo los ficheros reemplazados).</summary>
+    public int UndoBackupsToKeep { get; set; } = 1;
+    /// <summary>Vínculo elegido a mano en "Detección": folderPath → repositorio/app de Quiver (o desvinculado).</summary>
+    public Dictionary<string, LinkOverride> LinkOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public class LinkOverride
+{
+    /// <summary>true = no vincular a ningún repositorio (sin actualizaciones).</summary>
+    public bool Unlinked { get; set; }
+    /// <summary>folderName de la app de Quiver elegida (opcional).</summary>
+    public string? QuiverFolderName { get; set; }
+    public string? Repository { get; set; }
+    public string? Provider { get; set; }
+    public string? AssetFilter { get; set; }
 }
 
 /// <summary>
@@ -80,6 +95,8 @@ public static class ConfigService
         c.CoverOverrides = new(c.CoverOverrides ?? new(), StringComparer.OrdinalIgnoreCase);
         c.NameOverrides = new(c.NameOverrides ?? new(), StringComparer.OrdinalIgnoreCase);
         c.LastPlayed = new(c.LastPlayed ?? new(), StringComparer.OrdinalIgnoreCase);
+        c.LinkOverrides = new(c.LinkOverrides ?? new(), StringComparer.OrdinalIgnoreCase);
+        if (c.UndoBackupsToKeep < 1) c.UndoBackupsToKeep = 1;
         c.Favorites = c.Favorites.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         c.Hidden = c.Hidden.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (c.UpdateCheckIntervalHours < 0) c.UpdateCheckIntervalHours = 0;

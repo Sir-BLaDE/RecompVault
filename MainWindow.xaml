@@ -140,12 +140,15 @@
                                 <Border Style="{StaticResource CardStyle}" Width="220" Margin="8" Cursor="Hand" Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
                                     <Border.ContextMenu>
                                         <ContextMenu DataContext="{Binding PlacementTarget, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="ℹ Ver detección y cambiarla..." Command="{Binding Tag.ShowDetectionCommand}" CommandParameter="{Binding DataContext}" FontWeight="SemiBold"/>
+                                            <Separator/>
                                             <MenuItem Header="Cambiar nombre" Command="{Binding Tag.RenameGameCommand}" CommandParameter="{Binding DataContext}"/>
                                             <MenuItem Header="Ocultar juego" Command="{Binding Tag.HideGameCommand}" CommandParameter="{Binding DataContext}"/>
                                             <MenuItem Header="Mostrar (desocultar)" Command="{Binding Tag.UnhideGameCommand}" CommandParameter="{Binding DataContext}"/>
                                             <Separator/>
                                             <MenuItem Header="Buscar actualización" Command="{Binding Tag.CheckUpdateCommand}" CommandParameter="{Binding DataContext}"/>
                                             <MenuItem Header="Actualizar recomp" Command="{Binding Tag.UpdateGameCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <MenuItem Header="↶ Deshacer última actualización" Command="{Binding Tag.UndoUpdateCommand}" CommandParameter="{Binding DataContext}"/>
                                             <MenuItem Header="Abrir página de releases" Command="{Binding Tag.OpenRepositoryCommand}" CommandParameter="{Binding DataContext}"/>
                                             <Separator/>
                                             <MenuItem Header="Elegir ejecutable..." Command="{Binding Tag.PickExeCommand}" CommandParameter="{Binding DataContext}"/>
@@ -267,6 +270,13 @@
                                                 CommandParameter="{Binding}" IsEnabled="{Binding CanLaunch}" Padding="12,6" Margin="0,0,6,6"/>
                                         <Button Content="⟳" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Actualizar recomp (comprueba e instala la última versión)"
                                                 Command="{Binding DataContext.UpdateGameCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="↶" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Deshacer la última actualización"
+                                                Visibility="{Binding HasUndo, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding DataContext.UndoUpdateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="ℹ" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Ver qué se ha detectado (nombre, ejecutable, app de Quiver, repositorio, versiones) y cambiarlo"
+                                                Command="{Binding DataContext.ShowDetectionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"/>
                                         <Button Content="★" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Favorito"
                                                 Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=Window}}"

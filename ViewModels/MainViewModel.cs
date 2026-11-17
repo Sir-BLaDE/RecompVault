@@ -127,6 +127,8 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand ToggleAutoUpdateCommand { get; }
     public ICommand OpenRepositoryCommand { get; }
     public ICommand OpenLogCommand { get; }
+    public ICommand ShowDetectionCommand { get; }
+    public ICommand UndoUpdateCommand { get; }
 
     public MainViewModel()
     {
@@ -160,7 +162,105 @@ public class MainViewModel : INotifyPropertyChanged
         ToggleAutoUpdateCommand = new RelayCommand(_ => ToggleAutoUpdate());
         OpenRepositoryCommand = new RelayCommand(o => { if (o is GameEntry g) OpenRepository(g); });
         OpenLogCommand = new RelayCommand(_ => { if (File.Exists(Log.FilePath)) LauncherService.OpenUrl(Log.FilePath); else Status = "Aún no hay registro."; });
+        ShowDetectionCommand = new RelayCommand(o => { if (o is GameEntry g) ShowDetection(g); });
+        UndoUpdateCommand = new RelayCommand(o => { if (o is GameEntry g) UndoUpdate(g); }, o => o is GameEntry g && g.HasUndo && !g.IsUpdating);
         RescanCommand = new RelayCommand(_ => Rescan());
+    }
+
+    // ------------------------------------------------------------------ detección manual / deshacer
+
+    private void ShowDetection(GameEntry g)
+    {
+        var lib = QuiverService.Load(Config);
+        var dlg = new DetectionDialog(g, Config, lib) { Owner = System.Windows.Application.Current?.MainWindow };
+        if (dlg.ShowDialog() != true) return;
+        if (dlg.UndoRequested) { UndoUpdate(g); return; }
+        if (dlg.Saved) RefreshDetection(g, lib);
+    }
+
+    /// <summary>Vuelve a detectar un solo juego (nombre, exe, vínculo, versiones) tras cambios manuales.</summary>
+    private void RefreshDetection(GameEntry g, QuiverLibrary? lib)
+    {
+        Status = $"Aplicando cambios en {g.Name}...";
+        var others = AllGames.Where(x => !ReferenceEquals(x, g) && !string.IsNullOrWhiteSpace(x.QuiverFolderName))
+                             .Select(x => x.QuiverFolderName!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Task.Run(async () =>
+        {
+            var folderName = Path.GetFileName(g.FolderPath);
+            var (launch, launchSource) = ScannerService.ResolveLaunchWithSource(g.FolderPath, folderName, Config);
+            var auto = ScannerService.AutoName(folderName);
+            var probe = new GameEntry { FolderPath = g.FolderPath, Name = auto.name, NameSource = auto.source, NameFromTitleMap = auto.fromMap, System = g.System };
+            if (lib != null)
+            {
+                var taken = lib.Apps.Where(a => others.Contains(a.FolderName)).ToHashSet();
+                var exact = QuiverMatcher.MatchExact(lib, g.FolderPath);
+                var m = exact ?? QuiverMatcher.Match(lib, g.FolderPath, auto.name, taken);
+                if (m != null) QuiverService.Enrich(probe, m, Config, allowRename: exact != null || !auto.fromMap);
+            }
+            QuiverService.ApplyLinkOverride(probe, lib, Config);
+            var custom = ConfigService.Get(Config.NameOverrides, g.FolderPath);
+
+            UiThread.RunSync(() =>
+            {
+                QuiverService.Unlink(g);
+                g.Repository = probe.Repository; g.Provider = probe.Provider; g.AssetFilter = probe.AssetFilter;
+                g.Project = probe.Project; g.QuiverFolderName = probe.QuiverFolderName;
+                g.QuiverAppIconUrl = probe.QuiverAppIconUrl; g.QuiverLocalIconPath = probe.QuiverLocalIconPath;
+                g.LinkSource = string.IsNullOrWhiteSpace(probe.Repository) && probe.LinkSource == "Sin vincular" ? "Sin vincular" : probe.LinkSource;
+                if (!string.IsNullOrWhiteSpace(custom)) { g.Name = custom; g.NameSource = "Manual"; }
+                else { g.Name = probe.Name; g.NameSource = probe.NameSource; g.NameFromTitleMap = probe.NameFromTitleMap; }
+                g.LaunchPath = launch; g.LaunchSource = launchSource;
+            });
+            if (!string.IsNullOrWhiteSpace(g.Repository))
+                await UpdateService.CheckUpdateAsync(g, lib, Config, force: true);
+            else
+                UiThread.RunSync(() => g.InstalledVersion = UpdateService.ReadInstalledVersion(g.FolderPath) ?? "");
+            ArtworkService.Apply(g, Config);
+            UiThread.Run(() =>
+            {
+                RaiseUpdateCounts();
+                ApplyFilter();
+                Status = $"Detección actualizada: {g.Name} · {g.LinkSource}" + (string.IsNullOrWhiteSpace(g.Repository) ? "" : $" ({g.Repository})");
+            });
+        });
+    }
+
+    private void UndoUpdate(GameEntry g)
+    {
+        var m = UndoStore.Latest(g.FolderPath);
+        if (m == null) { Status = $"{g.Name}: no hay ninguna actualización que deshacer."; g.HasUndo = false; return; }
+        if (!DialogService.Confirm("Deshacer actualización",
+                $"¿Deshacer la actualización de "{g.Name}" del {m.CreatedUtc.ToLocalTime():dd/MM/yyyy HH:mm}?
+
+" +
+                $"{(m.FromVersion ?? "versión desconocida")}  ←  {m.ToVersion}  ({m.AssetName})
+
+" +
+                $"Se restaurarán {m.Replaced.Count} ficheros y se borrarán {m.Created.Count} que añadió la actualización.
+" +
+                "Las partidas y ajustes que no tocó la actualización no cambian.",
+                "Deshacer", "Cancelar"))
+            return;
+        g.IsUpdating = true;
+        Status = $"Deshaciendo la actualización de {g.Name}...";
+        Task.Run(() =>
+        {
+            var res = UpdateService.UndoLastUpdate(g, Config);
+            UiThread.Run(() =>
+            {
+                g.IsUpdating = false;
+                RaiseUpdateCounts();
+                Status = res.Message;
+                if (!res.Ok) DialogService.Info("No se pudo deshacer", $"{g.Name}
+
+{res.Message}");
+                else if (Config.AutoUpdateRecomps && g.HasUpdate)
+                    DialogService.Info("Auto-update activado",
+                        "Este juego vuelve a tener una actualización pendiente y el auto-update la reinstalaría.
+" +
+                        "Si el vínculo era erróneo, ábrelo con ℹ (Detección) y cámbialo o márcalo "sin vincular".");
+            });
+        });
     }
 
     // ------------------------------------------------------------------ escaneo

@@ -4,7 +4,7 @@ using System.Text;
 
 namespace RecompVault.Core;
 
-public sealed record QuiverMatch(QuiverApp? App, QuiverCatalogEntry? Catalog)
+public sealed record QuiverMatch(QuiverApp? App, QuiverCatalogEntry? Catalog, string Kind = "")
 {
     public string Repository => App?.Repository is { Length: > 0 } r ? r : Catalog?.Repository ?? "";
     public string Provider => App?.Repository is { Length: > 0 } ? App.Provider : Catalog?.Provider ?? "github";
@@ -27,13 +27,15 @@ public static class QuiverMatcher
     public static QuiverMatch? MatchExact(QuiverLibrary lib, string folderPath)
     {
         var folderName = Path.GetFileName(folderPath.TrimEnd('\\', '/'));
-        var app = lib.AppByPath(folderPath)
-                  // instalada en una subcarpeta de esta carpeta (Juego\Juego-v1.0\...)
-                  ?? lib.Apps.FirstOrDefault(a => a.InstallPath.Length > 0 && PathUtil.IsSameOrInside(a.InstallPath, folderPath))
-                  ?? lib.AppByFolderName(folderName) ?? lib.AppByNormName(PathUtil.NormName(folderName));
-        if (app != null) return new QuiverMatch(app, lib.CatalogFor(app));
+        var app = lib.AppByPath(folderPath);
+        if (app != null) return new QuiverMatch(app, lib.CatalogFor(app), "Quiver: ruta de instalación exacta");
+        // instalada en una subcarpeta de esta carpeta (Juego\Juego-v1.0\...)
+        app = lib.Apps.FirstOrDefault(a => a.InstallPath.Length > 0 && PathUtil.IsSameOrInside(a.InstallPath, folderPath));
+        if (app != null) return new QuiverMatch(app, lib.CatalogFor(app), "Quiver: instalada en una subcarpeta");
+        app = lib.AppByFolderName(folderName) ?? lib.AppByNormName(PathUtil.NormName(folderName));
+        if (app != null) return new QuiverMatch(app, lib.CatalogFor(app), "Quiver: mismo nombre de carpeta");
         var cat = lib.CatalogByFolderName(folderName) ?? lib.CatalogByNormName(PathUtil.NormName(folderName));
-        return cat != null ? new QuiverMatch(null, cat) : null;
+        return cat != null ? new QuiverMatch(null, cat, "Catálogo de Quiver: mismo nombre de carpeta") : null;
     }
 
     /// <param name="taken">Apps ya asignadas a otra carpeta: no se reutilizan en coincidencias difusas.</param>
@@ -54,10 +56,10 @@ public static class QuiverMatcher
                 if (PathUtil.IsSameOrInside(folderPath, a.InstallPath) || PathUtil.IsSameOrInside(a.InstallPath, folderPath)) { app = a; break; }
             }
         }
-        if (app != null) return new QuiverMatch(app, lib.CatalogFor(app));
+        if (app != null) return new QuiverMatch(app, lib.CatalogFor(app), "Quiver: coincidencia exacta");
 
         var cat = lib.CatalogByFolderName(folderName) ?? lib.CatalogByNormName(PathUtil.NormName(folderName));
-        if (cat != null) return new QuiverMatch(null, cat);
+        if (cat != null) return new QuiverMatch(null, cat, "Catálogo de Quiver: mismo nombre de carpeta");
 
         // 2) por puntuación
         var hints = Hints(folderPath);
@@ -72,7 +74,7 @@ public static class QuiverMatcher
             else if (s > secondApp && (bestApp == null || c.Repository != bestApp.Repository)) secondApp = s;
         }
         if (bestApp != null && bestAppScore >= AppThreshold && bestAppScore - secondApp >= AmbiguityMargin)
-            return new QuiverMatch(bestApp, lib.CatalogFor(bestApp));
+            return new QuiverMatch(bestApp, lib.CatalogFor(bestApp), $"Quiver: coincidencia aproximada (puntuación {bestAppScore}, siguiente {secondApp})");
 
         QuiverCatalogEntry? bestCat = null; int bestCatScore = 0, secondCat = 0;
         foreach (var c in lib.Catalog)
@@ -82,7 +84,7 @@ public static class QuiverMatcher
             else if (s > secondCat && (bestCat == null || c.Repository != bestCat.Repository)) secondCat = s;
         }
         if (bestCat != null && bestCatScore >= CatalogThreshold && bestCatScore - secondCat >= AmbiguityMargin)
-            return new QuiverMatch(null, bestCat);
+            return new QuiverMatch(null, bestCat, $"Catálogo de Quiver: coincidencia aproximada (puntuación {bestCatScore})");
         return null;
     }
 

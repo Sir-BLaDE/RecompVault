@@ -63,6 +63,13 @@ public static class ScannerService
         catch { }
     }
 
+    /// <summary>Nombre automático (sin Quiver): gametitles.json o nombre de carpeta limpio.</summary>
+    public static (string name, string source, bool fromMap) AutoName(string folderName)
+    {
+        var mapped = MappedTitle(folderName);
+        return mapped != null ? (mapped, "gametitles.json", true) : (LaunchPicker.CleanTitle(folderName), "Nombre de carpeta (limpiado)", false);
+    }
+
     private static string? MappedTitle(string folderName)
     {
         EnsureTitleMap();
@@ -143,11 +150,13 @@ public static class ScannerService
 
         foreach (var g in result)
         {
+            QuiverService.ApplyLinkOverride(g, quiver, cfg);
+            g.HasUndo = UndoStore.Latest(g.FolderPath) != null;
             g.Favorite = ConfigService.ListContains(cfg, cfg.Favorites, g.FolderPath);
             g.IsHidden = ConfigService.ListContains(cfg, cfg.Hidden, g.FolderPath);
             lock (ConfigService.Sync) { if (cfg.LastPlayed.TryGetValue(g.FolderPath, out var lp)) g.LastPlayed = lp; }
             var custom = ConfigService.Get(cfg.NameOverrides, g.FolderPath);
-            if (!string.IsNullOrWhiteSpace(custom)) g.Name = custom.Trim();
+            if (!string.IsNullOrWhiteSpace(custom)) { g.Name = custom.Trim(); g.NameSource = "Manual"; }
             ArtworkService.Apply(g, cfg, detached: true);
         }
 
@@ -200,7 +209,7 @@ public static class ScannerService
     private static GameEntry? CreateEntry(string gameDir, string sysName, AppConfig cfg, bool allowEmpty = true)
     {
         var folderName = Path.GetFileName(gameDir.TrimEnd('\\', '/'));
-        var launch = ResolveLaunch(gameDir, folderName, cfg);
+        var (launch, launchSource) = ResolveLaunchWithSource(gameDir, folderName, cfg);
         if (string.IsNullOrEmpty(launch) && (!allowEmpty || !HasAnyContent(gameDir))) return null;
 
         var mapped = MappedTitle(folderName);
@@ -208,6 +217,8 @@ public static class ScannerService
         {
             Name = mapped ?? LaunchPicker.CleanTitle(folderName),
             NameFromTitleMap = mapped != null,
+            NameSource = mapped != null ? "gametitles.json" : "Nombre de carpeta (limpiado)",
+            LaunchSource = launchSource,
             RecompName = folderName,
             System = sysName,
             FolderPath = gameDir,
@@ -219,10 +230,12 @@ public static class ScannerService
     }
 
     /// <summary>Ejecutable: elegido por el usuario aquí → elegido en Quiver (selected_executable.txt) → heurística.</summary>
-    public static string ResolveLaunch(string gameDir, string folderName, AppConfig cfg)
+    public static string ResolveLaunch(string gameDir, string folderName, AppConfig cfg) => ResolveLaunchWithSource(gameDir, folderName, cfg).path;
+
+    public static (string path, string source) ResolveLaunchWithSource(string gameDir, string folderName, AppConfig cfg)
     {
         var ov = ConfigService.Get(cfg.LaunchOverrides, gameDir);
-        if (ov != null && File.Exists(ov)) return ov;
+        if (ov != null && File.Exists(ov)) return (ov, "Manual");
         try
         {
             var sel = Path.Combine(gameDir, "selected_executable.txt");
@@ -232,12 +245,13 @@ public static class ScannerService
                 if (p.Length > 0)
                 {
                     if (!Path.IsPathRooted(p)) p = Path.Combine(gameDir, p);
-                    if (File.Exists(p)) return Path.GetFullPath(p);
+                    if (File.Exists(p)) return (Path.GetFullPath(p), "Quiver (selected_executable.txt)");
                 }
             }
         }
         catch { }
-        return LaunchPicker.Pick(gameDir, folderName);
+        var picked = LaunchPicker.Pick(gameDir, folderName);
+        return (picked, picked.Length > 0 ? "Automático (mejor puntuación)" : "No encontrado");
     }
 
     private static string SystemFromTags(QuiverApp app)

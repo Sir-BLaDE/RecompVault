@@ -38,6 +38,16 @@ public class GameEntry : INotifyPropertyChanged
     /// <summary>El nombre viene de gametitles.json (más fiable que una coincidencia difusa con Quiver).</summary>
     public bool NameFromTitleMap { get; set; }
 
+    // ---------------------------------------------------------------- origen de cada dato (ventana "Detección")
+    public string NameSource { get; set; } = "";
+    public string LaunchSource { get; set; } = "";
+    private string _linkSource = "Sin vincular";
+    public string LinkSource { get => _linkSource; set => Set(ref _linkSource, value ?? ""); }
+
+    private bool _hasUndo;
+    /// <summary>Hay una copia para deshacer la última actualización hecha por RecompVault.</summary>
+    public bool HasUndo { get => _hasUndo; set => Set(ref _hasUndo, value); }
+
     /// <summary>App instalada por Quiver fuera de la carpeta raíz (no se puede eliminar desde aquí).</summary>
     public bool IsExternal { get; set; }
 

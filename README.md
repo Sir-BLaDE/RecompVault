@@ -30,6 +30,29 @@ Raíz\
 `gametitles.json` va incrustado en el exe. Si pones un `gametitles.json` junto al exe o en
 `%APPDATA%\RecompVault`, amplía o sobrescribe sus entradas sin necesidad de recompilar.
 
+## Detección (botón ℹ)
+
+Cada tarjeta tiene un botón **ℹ** (también en el clic derecho) que muestra qué se ha detectado y
+de dónde sale cada dato: nombre, ejecutable (con la puntuación de cada candidato), app de Quiver
+vinculada y tipo de coincidencia (ruta exacta, subcarpeta, nombre de carpeta o aproximada con su
+puntuación), repositorio, filtro de paquete, versiones y portada. Desde ahí puedes cambiar:
+
+- el nombre (vacío = automático);
+- el ejecutable (lista de candidatos o "Examinar...");
+- la app de Quiver (lista filtrable), el repositorio (`propietario/repo` o URL), GitHub/GitLab y el filtro de paquete;
+- "sin vincular" para que no se busquen actualizaciones de ese juego.
+
+"Restablecer todo a automático" borra lo elegido a mano para esa carpeta.
+
+## Deshacer actualización
+
+Antes de escribir cada fichero, la actualización mueve el original a
+`<juego>\.recompvault-undo\<fecha>\` (misma unidad: instantáneo). Si la actualización falla a
+medias se revierte sola. Si termina pero el juego no era el correcto, **↶** (en la tarjeta o en el
+clic derecho) restaura los ficheros reemplazados, borra los que añadió y devuelve `version.txt`.
+Se guarda una copia por juego (`UndoBackupsToKeep` en `config.json`). Las carpetas que actualizó la
+versión anterior de RecompVault no tienen copia; la ventana ℹ lo indica.
+
 ## Actualizaciones
 
 - La comprobación automática al arrancar consulta cada repositorio como mucho cada 6 horas. Las respuestas se cachean con ETag, así que no gastan cuota de la API.
