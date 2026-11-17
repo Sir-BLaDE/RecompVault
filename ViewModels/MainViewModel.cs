@@ -230,14 +230,9 @@ public class MainViewModel : INotifyPropertyChanged
         var m = UndoStore.Latest(g.FolderPath);
         if (m == null) { Status = $"{g.Name}: no hay ninguna actualización que deshacer."; g.HasUndo = false; return; }
         if (!DialogService.Confirm("Deshacer actualización",
-                $"¿Deshacer la actualización de "{g.Name}" del {m.CreatedUtc.ToLocalTime():dd/MM/yyyy HH:mm}?
-
-" +
-                $"{(m.FromVersion ?? "versión desconocida")}  ←  {m.ToVersion}  ({m.AssetName})
-
-" +
-                $"Se restaurarán {m.Replaced.Count} ficheros y se borrarán {m.Created.Count} que añadió la actualización.
-" +
+                $"¿Deshacer la actualización de \"{g.Name}\" del {m.CreatedUtc.ToLocalTime():dd/MM/yyyy HH:mm}?\n\n" +
+                $"{(m.FromVersion ?? "versión desconocida")}  ←  {m.ToVersion}  ({m.AssetName})\n\n" +
+                $"Se restaurarán {m.Replaced.Count} ficheros y se borrarán {m.Created.Count} que añadió la actualización.\n" +
                 "Las partidas y ajustes que no tocó la actualización no cambian.",
                 "Deshacer", "Cancelar"))
             return;
@@ -251,14 +246,11 @@ public class MainViewModel : INotifyPropertyChanged
                 g.IsUpdating = false;
                 RaiseUpdateCounts();
                 Status = res.Message;
-                if (!res.Ok) DialogService.Info("No se pudo deshacer", $"{g.Name}
-
-{res.Message}");
+                if (!res.Ok) DialogService.Info("No se pudo deshacer", $"{g.Name}\n\n{res.Message}");
                 else if (Config.AutoUpdateRecomps && g.HasUpdate)
                     DialogService.Info("Auto-update activado",
-                        "Este juego vuelve a tener una actualización pendiente y el auto-update la reinstalaría.
-" +
-                        "Si el vínculo era erróneo, ábrelo con ℹ (Detección) y cámbialo o márcalo "sin vincular".");
+                        "Este juego vuelve a tener una actualización pendiente y el auto-update la reinstalaría.\n" +
+                        "Si el vínculo era erróneo, ábrelo con ℹ (Detección) y cámbialo o márcalo \"sin vincular\".");
             });
         });
     }
