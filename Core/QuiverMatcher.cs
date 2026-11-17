@@ -27,7 +27,10 @@ public static class QuiverMatcher
     public static QuiverMatch? MatchExact(QuiverLibrary lib, string folderPath)
     {
         var folderName = Path.GetFileName(folderPath.TrimEnd('\\', '/'));
-        var app = lib.AppByPath(folderPath) ?? lib.AppByFolderName(folderName) ?? lib.AppByNormName(PathUtil.NormName(folderName));
+        var app = lib.AppByPath(folderPath)
+                  // instalada en una subcarpeta de esta carpeta (Juego\Juego-v1.0\...)
+                  ?? lib.Apps.FirstOrDefault(a => a.InstallPath.Length > 0 && PathUtil.IsSameOrInside(a.InstallPath, folderPath))
+                  ?? lib.AppByFolderName(folderName) ?? lib.AppByNormName(PathUtil.NormName(folderName));
         if (app != null) return new QuiverMatch(app, lib.CatalogFor(app));
         var cat = lib.CatalogByFolderName(folderName) ?? lib.CatalogByNormName(PathUtil.NormName(folderName));
         return cat != null ? new QuiverMatch(null, cat) : null;

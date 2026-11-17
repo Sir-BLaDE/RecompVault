@@ -35,6 +35,9 @@ public class GameEntry : INotifyPropertyChanged
 
     public DateTime LastPlayed { get; set; }
 
+    /// <summary>El nombre viene de gametitles.json (más fiable que una coincidencia difusa con Quiver).</summary>
+    public bool NameFromTitleMap { get; set; }
+
     /// <summary>App instalada por Quiver fuera de la carpeta raíz (no se puede eliminar desde aquí).</summary>
     public bool IsExternal { get; set; }
 

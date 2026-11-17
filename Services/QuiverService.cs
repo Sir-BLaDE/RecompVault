@@ -26,13 +26,13 @@ public static class QuiverService
     }
 
     /// <summary>Aplica nombre, repositorio, icono y versión conocida por Quiver a la entrada.</summary>
-    public static void Enrich(GameEntry g, QuiverMatch m, AppConfig cfg)
+    public static void Enrich(GameEntry g, QuiverMatch m, AppConfig cfg, bool allowRename = true)
     {
         var app = m.App;
         var hasCustomName = ConfigService.Get(cfg.NameOverrides, g.FolderPath) != null;
         if (app != null)
         {
-            if (!hasCustomName && !string.IsNullOrWhiteSpace(app.Name)) g.Name = CleanQuiverName(app.Name);
+            if (allowRename && !hasCustomName && !string.IsNullOrWhiteSpace(app.Name)) g.Name = CleanQuiverName(app.Name);
             g.QuiverFolderName = app.FolderName;
             g.QuiverAppIconUrl = string.IsNullOrWhiteSpace(app.AppIconUrl) ? null : app.AppIconUrl;
             if (!string.IsNullOrWhiteSpace(app.CustomIconPath) && File.Exists(app.CustomIconPath)) g.QuiverLocalIconPath = app.CustomIconPath;

@@ -179,6 +179,32 @@ try
     var banjoDir = Path.Combine(gamesRoot, "N64", "BanjoRecompiled-v1.0.0-Windows");
     var mb = QuiverMatcher.Match(lib, banjoDir, "Banjo-Kazooie");
     Check("match difuso Banjo", mb?.App?.Repository == "BanjoRecomp/BanjoRecomp");
+    // Disposición real: installPath absoluto a carpetas de la raíz; sm64ds no debe emparejarse con un port de SM64 de N64
+    var q2 = Path.Combine(tmp, "Q2");
+    var r2 = Path.Combine(tmp, "Root2");
+    var dsDir = Path.Combine(r2, "DS", "sm64ds");
+    var n64Dir = Path.Combine(r2, "N64", "Ghostship-Dutchman-Charlie-Win64");
+    var dpOuter = Path.Combine(r2, "X360", "Deadly Premonition (Europe)");
+    var dpInner = Path.Combine(dpOuter, "Deadly Premonition (Europe)");
+    foreach (var d in new[] { q2, dsDir, n64Dir, dpInner }) Directory.CreateDirectory(d);
+    File.WriteAllText(Path.Combine(dsDir, "sm64ds.exe"), "MZ");
+    File.WriteAllText(Path.Combine(n64Dir, "Ghostship.exe"), "MZ");
+    File.WriteAllText(Path.Combine(dpInner, "deadlyprem.exe"), "MZ");
+    var json = new System.Text.Json.Nodes.JsonObject
+    {
+        ["apps"] = new System.Text.Json.Nodes.JsonArray(
+            new System.Text.Json.Nodes.JsonObject { ["name"] = "Super Mario 64 (Ghostship)", ["repository"] = "HarbourMasters/Ghostship", ["folderName"] = "SuperMario64-Ghostship", ["installPath"] = n64Dir },
+            new System.Text.Json.Nodes.JsonObject { ["name"] = "Super Mario 64 Recomp", ["repository"] = "sm64recomp/sm64recomp", ["folderName"] = "SuperMario64-Recomp" },
+            new System.Text.Json.Nodes.JsonObject { ["name"] = "Deadly Premonition", ["repository"] = "x/deadlyprem", ["folderName"] = "DeadlyPremonition", ["installPath"] = dpInner })
+    };
+    File.WriteAllText(Path.Combine(q2, "apps.json"), json.ToJsonString());
+    var lib2 = QuiverLibrary.Load(q2)!;
+    Check("Ghostship por installPath absoluto", QuiverMatcher.MatchExact(lib2, n64Dir)?.App?.Repository == "HarbourMasters/Ghostship");
+    var taken2 = new HashSet<QuiverApp> { lib2.AppByPath(n64Dir)! };
+    var ds = QuiverMatcher.Match(lib2, dsDir, "Super Mario 64 DS", taken2);
+    Check($"sm64ds sin emparejar con SM64 de N64 (emparejó {ds?.App?.Name})", ds == null);
+    Check("instalación anidada = mismo juego", QuiverMatcher.MatchExact(lib2, dpOuter)?.App?.Repository == "x/deadlyprem");
+
     var none = Path.Combine(gamesRoot, "N64", "Otro");
     Directory.CreateDirectory(none);
     Check("sin falso positivo", QuiverMatcher.Match(lib, none, "Otro juego") == null);

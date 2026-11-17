@@ -110,7 +110,9 @@ public static class ScannerService
             {
                 var m = QuiverMatcher.Match(quiver, g.FolderPath, g.Name, taken);
                 if (m == null) continue;
-                QuiverService.Enrich(g, m, cfg);
+                // coincidencia difusa: no pisa un título conocido de gametitles.json
+                QuiverService.Enrich(g, m, cfg, allowRename: !g.NameFromTitleMap);
+                Log.Info($"Quiver (difuso): {g.FolderPath} → {m.App?.Name ?? m.Catalog?.Slug} [{m.Repository}]");
                 if (m.App != null) taken.Add(m.App);
             }
 
@@ -119,13 +121,21 @@ public static class ScannerService
                 foreach (var app in quiver.Apps)
                 {
                     if (app.InstallPath.Length == 0 || !Directory.Exists(app.InstallPath)) continue;
+                    if (taken.Contains(app)) continue;
+                    // instalada dentro de una carpeta ya listada (p.ej. Juego\Subcarpeta): es el mismo juego, no se duplica
+                    var host = result.FirstOrDefault(g => PathUtil.IsSameOrInside(app.InstallPath, g.FolderPath));
+                    if (host != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(host.Repository)) QuiverService.Enrich(host, new QuiverMatch(app, quiver.CatalogFor(app)), cfg, allowRename: !host.NameFromTitleMap);
+                        taken.Add(app);
+                        continue;
+                    }
                     if (!seen.Add(PathUtil.Norm(app.InstallPath))) continue;
-                    if (!string.IsNullOrWhiteSpace(root) && PathUtil.IsSameOrInside(app.InstallPath, root) && taken.Contains(app)) continue;
                     if (File.Exists(Path.Combine(app.InstallPath, "install-incomplete.txt"))) continue;
                     var entry = CreateEntry(app.InstallPath, SystemFromTags(app), cfg, allowEmpty: false);
                     if (entry == null) continue;
                     entry.IsExternal = !PathUtil.IsSameOrInside(app.InstallPath, root);
-                    QuiverService.Enrich(entry, new QuiverMatch(app, quiver.CatalogByRepo(app.Repository)), cfg);
+                    QuiverService.Enrich(entry, new QuiverMatch(app, quiver.CatalogFor(app)), cfg);
                     result.Add(entry);
                 }
             }
@@ -197,6 +207,7 @@ public static class ScannerService
         var entry = new GameEntry
         {
             Name = mapped ?? LaunchPicker.CleanTitle(folderName),
+            NameFromTitleMap = mapped != null,
             RecompName = folderName,
             System = sysName,
             FolderPath = gameDir,
