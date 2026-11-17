@@ -129,6 +129,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenLogCommand { get; }
     public ICommand ShowDetectionCommand { get; }
     public ICommand UndoUpdateCommand { get; }
+    public ICommand InstallVersionCommand { get; }
 
     public MainViewModel()
     {
@@ -164,27 +165,46 @@ public class MainViewModel : INotifyPropertyChanged
         OpenLogCommand = new RelayCommand(_ => { if (File.Exists(Log.FilePath)) LauncherService.OpenUrl(Log.FilePath); else Status = "Aún no hay registro."; });
         ShowDetectionCommand = new RelayCommand(o => { if (o is GameEntry g) ShowDetection(g); });
         UndoUpdateCommand = new RelayCommand(o => { if (o is GameEntry g) UndoUpdate(g); }, o => o is GameEntry g && g.HasUndo && !g.IsUpdating);
+        InstallVersionCommand = new RelayCommand(o => { if (o is GameEntry g) InstallVersion(g); }, o => o is GameEntry g && !g.IsUpdating);
         RescanCommand = new RelayCommand(_ => Rescan());
+    }
+
+    private void InstallVersion(GameEntry g)
+    {
+        if (string.IsNullOrWhiteSpace(g.Repository))
+        {
+            DialogService.Info("Sin repositorio", $"\"{g.Name}\" no está vinculado a ningún repositorio.\n\nVincúlalo primero con ℹ (Detección): elige la app de Quiver o escribe propietario/repositorio.");
+            return;
+        }
+        var dlg = new VersionPickerDialog(g, Config) { Owner = System.Windows.Application.Current?.MainWindow };
+        if (dlg.ShowDialog() != true || dlg.Choice == null) return;
+        StartUpdate(g, dlg.Choice, pin: dlg.Pin);
     }
 
     // ------------------------------------------------------------------ detección manual / deshacer
 
-    private void ShowDetection(GameEntry g)
+    private async void ShowDetection(GameEntry g)
     {
         var lib = QuiverService.Load(Config);
         var dlg = new DetectionDialog(g, Config, lib) { Owner = System.Windows.Application.Current?.MainWindow };
         if (dlg.ShowDialog() != true) return;
         if (dlg.UndoRequested) { UndoUpdate(g); return; }
-        if (dlg.Saved) RefreshDetection(g, lib);
+        if (dlg.InstallVersionRequested)
+        {
+            if (dlg.Saved) await RefreshDetection(g, lib); // el vínculo nuevo tiene que estar aplicado antes de listar releases
+            InstallVersion(g);
+            return;
+        }
+        if (dlg.Saved) await RefreshDetection(g, lib);
     }
 
     /// <summary>Vuelve a detectar un solo juego (nombre, exe, vínculo, versiones) tras cambios manuales.</summary>
-    private void RefreshDetection(GameEntry g, QuiverLibrary? lib)
+    private Task RefreshDetection(GameEntry g, QuiverLibrary? lib)
     {
         Status = $"Aplicando cambios en {g.Name}...";
         var others = AllGames.Where(x => !ReferenceEquals(x, g) && !string.IsNullOrWhiteSpace(x.QuiverFolderName))
                              .Select(x => x.QuiverFolderName!).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        Task.Run(async () =>
+        return Task.Run(async () =>
         {
             var folderName = Path.GetFileName(g.FolderPath);
             var (launch, launchSource) = ScannerService.ResolveLaunchWithSource(g.FolderPath, folderName, Config);
@@ -661,7 +681,14 @@ public class MainViewModel : INotifyPropertyChanged
     private void UpdateSingleGame(GameEntry g)
     {
         if (g.IsUpdating) { Status = $"Ya se está actualizando {g.Name}."; return; }
-        if (string.IsNullOrWhiteSpace(g.Repository)) { Status = $"{g.Name} no está vinculado a ningún repositorio (sincroniza con Quiver)."; return; }
+        if (string.IsNullOrWhiteSpace(g.Repository)) { Status = $"{g.Name} no está vinculado a ningún repositorio (sincroniza con Quiver o usa ℹ)."; return; }
+        if (g.IsPinned)
+        {
+            if (!DialogService.Confirm("Versión fijada", $"\"{g.Name}\" está fijado en {g.PinnedVersion}.\n\n¿Quitar la fijación y actualizar a la última?", "Quitar y actualizar", "Cancelar"))
+                return;
+            ConfigService.Update(Config, c => c.PinnedVersions.Remove(g.FolderPath));
+            g.PinnedVersion = "";
+        }
         Status = $"Preparando actualización de {g.Name}...";
         Task.Run(async () =>
         {
@@ -695,16 +722,24 @@ public class MainViewModel : INotifyPropertyChanged
         });
     }
 
-    private void StartUpdate(GameEntry g)
+    /// <param name="choice">Versión concreta elegida; null = la última.</param>
+    /// <param name="pin">true = fijar la versión instalada; false = quitar la fijación; null = no tocar.</param>
+    private void StartUpdate(GameEntry g, UpdateService.InstallChoice? choice = null, bool? pin = false)
     {
         g.IsUpdating = true;
-        Status = $"Actualizando {g.Name} a {g.LatestVersion}...";
+        Status = $"Instalando {g.Name} {choice?.Version ?? g.LatestVersion}...";
         Task.Run(async () =>
         {
-            var res = await UpdateService.UpdateAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = s)));
+            var res = await UpdateService.UpdateAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = s)), default, choice);
             UiThread.Run(() =>
             {
                 g.IsUpdating = false;
+                if (res.Ok && pin.HasValue)
+                {
+                    var tag = choice?.Version ?? g.InstalledVersion;
+                    ConfigService.Update(Config, c => { if (pin.Value) c.PinnedVersions[g.FolderPath] = tag; else c.PinnedVersions.Remove(g.FolderPath); });
+                    g.PinnedVersion = pin.Value ? tag : "";
+                }
                 RaiseUpdateCounts();
                 Status = res.Message;
                 if (!res.Ok && !res.Manual)

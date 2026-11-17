@@ -152,6 +152,7 @@ public static class ScannerService
         {
             QuiverService.ApplyLinkOverride(g, quiver, cfg);
             g.HasUndo = UndoStore.Latest(g.FolderPath) != null;
+            g.PinnedVersion = ConfigService.Get(cfg.PinnedVersions, g.FolderPath) ?? "";
             g.Favorite = ConfigService.ListContains(cfg, cfg.Favorites, g.FolderPath);
             g.IsHidden = ConfigService.ListContains(cfg, cfg.Hidden, g.FolderPath);
             lock (ConfigService.Sync) { if (cfg.LastPlayed.TryGetValue(g.FolderPath, out var lp)) g.LastPlayed = lp; }

@@ -236,6 +236,76 @@ public static class UpdateService
         }
     }
 
+    public sealed record ReleaseInfo(string Tag, string Title, DateTime? Published, bool Prerelease, List<ReleaseAsset> Assets, string Notes);
+
+    /// <summary>Lista de releases del repositorio (para elegir una versión concreta). No usa la caché.</summary>
+    public static async Task<(List<ReleaseInfo> releases, string? error)> ListReleasesAsync(string provider, string repo, AppConfig cfg, CancellationToken ct = default)
+    {
+        var list = new List<ReleaseInfo>();
+        repo = repo.Trim().Trim('/');
+        bool gitlab = string.Equals(provider, "gitlab", StringComparison.OrdinalIgnoreCase);
+        if (!gitlab && IsRateLimited) return (list, $"Límite de la API de GitHub alcanzado hasta las {RateLimitResetLocal:HH:mm}.");
+        var url = gitlab
+            ? $"https://gitlab.com/api/v4/projects/{Uri.EscapeDataString(repo)}/releases?per_page=50"
+            : $"https://api.github.com/repos/{repo}/releases?per_page=50";
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (!gitlab)
+            {
+                req.Headers.Accept.ParseAdd("application/vnd.github+json");
+                var token = cfg.GitHubToken?.Trim();
+                if (!string.IsNullOrEmpty(token)) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(30));
+            using var resp = await Http.SendAsync(req, cts.Token).ConfigureAwait(false);
+            if (resp.StatusCode == HttpStatusCode.NotFound) return (list, $"El repositorio {repo} no existe en {(gitlab ? "GitLab" : "GitHub")}.");
+            if (!resp.IsSuccessStatusCode) return (list, $"HTTP {(int)resp.StatusCode} al consultar {repo}.");
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return (list, "Respuesta inesperada del servidor.");
+            foreach (var r in doc.RootElement.EnumerateArray())
+            {
+                if (r.TryGet("draft", out var d) && d.ValueKind == JsonValueKind.True) continue;
+                var tag = r.Str("tag_name") ?? r.Str("name");
+                if (tag == null) continue;
+                var assets = new List<ReleaseAsset>();
+                if (gitlab)
+                {
+                    var a = r.Obj("assets");
+                    if (a != null)
+                        foreach (var l in a.Value.Arr("links"))
+                        {
+                            var n = l.Str("name"); var u = l.Str("direct_asset_url", "url");
+                            if (n != null && u != null) assets.Add(new ReleaseAsset(n, u));
+                        }
+                }
+                else
+                {
+                    foreach (var a in r.Arr("assets"))
+                    {
+                        var n = a.Str("name"); var u = a.Str("browser_download_url");
+                        if (n != null && u != null)
+                            assets.Add(new ReleaseAsset(n, u, a.Str("digest"), a.TryGet("size", out var sz) && sz.TryGetInt64(out var len) ? len : 0));
+                    }
+                }
+                var pre = gitlab ? (r.TryGet("upcoming_release", out var up) && up.ValueKind == JsonValueKind.True)
+                                 : (r.TryGet("prerelease", out var p) && p.ValueKind == JsonValueKind.True);
+                DateTime? published = DateTime.TryParse(r.Str("published_at", "released_at", "created_at"), null,
+                    System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var dt) ? dt : null;
+                var notes = r.Str("body", "description") ?? "";
+                list.Add(new ReleaseInfo(tag, r.Str("name") ?? tag, published, pre, assets, notes));
+            }
+            return (list, null);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            Log.Warn($"Lista de releases {repo}: {ex.Message}");
+            return (list, ex.Message);
+        }
+    }
+
     private static CachedRelease? ParseGitHub(string json, bool includePre)
     {
         using var doc = JsonDocument.Parse(json);
@@ -355,25 +425,30 @@ public static class UpdateService
 
     public sealed record UpdateOutcome(bool Ok, string Message, bool Manual = false);
 
-    public static async Task<UpdateOutcome> UpdateAsync(GameEntry g, AppConfig cfg, IProgress<string>? progress = null, CancellationToken ct = default)
+    /// <summary>Versión y paquete concretos elegidos por el usuario ("Instalar una versión concreta…").</summary>
+    public sealed record InstallChoice(string Version, ReleaseAsset Asset);
+
+    public static async Task<UpdateOutcome> UpdateAsync(GameEntry g, AppConfig cfg, IProgress<string>? progress = null, CancellationToken ct = default,
+        InstallChoice? choice = null)
     {
-        if (string.IsNullOrWhiteSpace(g.UpdateAssetUrl) && !string.IsNullOrWhiteSpace(g.Repository))
+        if (choice == null && string.IsNullOrWhiteSpace(g.UpdateAssetUrl) && !string.IsNullOrWhiteSpace(g.Repository))
         {
             progress?.Report($"Buscando paquete de Windows para {g.Name}...");
             await CheckUpdateAsync(g, null, cfg, force: true, ct).ConfigureAwait(false);
         }
-        if (string.IsNullOrWhiteSpace(g.UpdateAssetUrl))
+        if (choice == null && string.IsNullOrWhiteSpace(g.UpdateAssetUrl))
             return new UpdateOutcome(false, "El release no tiene un paquete de Windows descargable.");
 
         var running = RunningProcessesIn(g.FolderPath);
         if (running.Count > 0)
             return new UpdateOutcome(false, $"Cierra el juego antes de actualizar ({string.Join(", ", running)}).");
 
-        var url = g.UpdateAssetUrl!;
-        var name = string.IsNullOrWhiteSpace(g.UpdateAssetName) ? Path.GetFileName(new Uri(url).AbsolutePath) : g.UpdateAssetName!;
+        var url = choice?.Asset.Url ?? g.UpdateAssetUrl!;
+        var name = choice?.Asset.Name ?? (string.IsNullOrWhiteSpace(g.UpdateAssetName) ? Path.GetFileName(new Uri(url).AbsolutePath) : g.UpdateAssetName!);
         if (string.IsNullOrWhiteSpace(name)) name = "update.zip";
         name = PathUtil.SafeFileName(name, 150);
-        var version = g.LatestVersion;
+        var version = choice?.Version ?? g.LatestVersion;
+        var digest = choice != null ? choice.Asset.Digest : g.UpdateAssetDigest;
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "RecompVaultUpdate_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -382,14 +457,14 @@ public static class UpdateService
         {
             var downloadPath = Path.Combine(tempRoot, name);
             var err = await DownloadAsync(url, downloadPath, cfg, s => progress?.Report($"Descargando {g.Name} {version}: {s}"), ct).ConfigureAwait(false);
-            if (err != null && (err.Contains("404") || err.Contains("410")) && !string.IsNullOrWhiteSpace(g.Repository))
+            if (choice == null && err != null && (err.Contains("404") || err.Contains("410")) && !string.IsNullOrWhiteSpace(g.Repository))
             {
                 // el asset de la caché ya no existe: pedir el release actual y reintentar una vez
                 progress?.Report("El paquete ya no existe, buscando el release actual...");
                 await CheckUpdateAsync(g, null, cfg, force: true, ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(g.UpdateAssetUrl) && g.UpdateAssetUrl != url)
                 {
-                    url = g.UpdateAssetUrl!; version = g.LatestVersion;
+                    url = g.UpdateAssetUrl!; version = g.LatestVersion; digest = g.UpdateAssetDigest;
                     name = PathUtil.SafeFileName(g.UpdateAssetName ?? Path.GetFileName(new Uri(url).AbsolutePath), 150);
                     downloadPath = Path.Combine(tempRoot, name);
                     err = await DownloadAsync(url, downloadPath, cfg, s => progress?.Report($"Descargando {g.Name} {version}: {s}"), ct).ConfigureAwait(false);
@@ -400,10 +475,10 @@ public static class UpdateService
             string sha;
             await using (var s = File.OpenRead(downloadPath))
                 sha = Convert.ToHexString(await SHA256.HashDataAsync(s, ct).ConfigureAwait(false)).ToLowerInvariant();
-            if (!string.IsNullOrWhiteSpace(g.UpdateAssetDigest) && g.UpdateAssetDigest!.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(digest) && digest!.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
             {
                 progress?.Report("Verificando SHA-256...");
-                var expected = g.UpdateAssetDigest["sha256:".Length..].Trim();
+                var expected = digest["sha256:".Length..].Trim();
                 if (!sha.Equals(expected, StringComparison.OrdinalIgnoreCase))
                     return new UpdateOutcome(false, "La verificación SHA-256 no coincide; descarga descartada.");
             }

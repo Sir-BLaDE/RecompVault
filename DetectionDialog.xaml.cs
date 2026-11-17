@@ -40,6 +40,8 @@ public partial class DetectionDialog : Window
     public bool Saved { get; private set; }
     /// <summary>El usuario pidió deshacer la última actualización.</summary>
     public bool UndoRequested { get; private set; }
+    /// <summary>El usuario pidió instalar una versión concreta (tras guardar los cambios del vínculo).</summary>
+    public bool InstallVersionRequested { get; private set; }
 
     public DetectionDialog(GameEntry g, AppConfig cfg, QuiverLibrary? lib)
     {
@@ -212,6 +214,14 @@ public partial class DetectionDialog : Window
     {
         UndoRequested = true;
         DialogResult = true;
+    }
+
+    private void InstallVersion_Click(object sender, RoutedEventArgs e)
+    {
+        // guarda primero lo editado (p.ej. un repositorio corregido) y luego abre el selector de versiones
+        InstallVersionRequested = true;
+        Save_Click(sender, e);
+        if (DialogResult != true) InstallVersionRequested = false;
     }
 
     private void Reset_Click(object sender, RoutedEventArgs e)

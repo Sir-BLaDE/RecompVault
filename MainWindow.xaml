@@ -148,6 +148,7 @@
                                             <Separator/>
                                             <MenuItem Header="Buscar actualización" Command="{Binding Tag.CheckUpdateCommand}" CommandParameter="{Binding DataContext}"/>
                                             <MenuItem Header="Actualizar recomp" Command="{Binding Tag.UpdateGameCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <MenuItem Header="⇩ Instalar una versión concreta..." Command="{Binding Tag.InstallVersionCommand}" CommandParameter="{Binding DataContext}"/>
                                             <MenuItem Header="↶ Deshacer última actualización" Command="{Binding Tag.UndoUpdateCommand}" CommandParameter="{Binding DataContext}"/>
                                             <MenuItem Header="Abrir página de releases" Command="{Binding Tag.OpenRepositoryCommand}" CommandParameter="{Binding DataContext}"/>
                                             <Separator/>

@@ -53,6 +53,15 @@ clic derecho) restaura los ficheros reemplazados, borra los que añadió y devue
 Se guarda una copia por juego (`UndoBackupsToKeep` en `config.json`). Las carpetas que actualizó la
 versión anterior de RecompVault no tienen copia; la ventana ℹ lo indica.
 
+## Instalar una versión concreta
+
+Clic derecho → **⇩ Instalar una versión concreta...** (o "Guardar e instalar versión..." en ℹ).
+Lista los releases del repositorio vinculado con fecha, prereleases, notas y paquetes. Recomienda
+el paquete según el filtro de Quiver, el paquete instalado y la plataforma, y deja elegir otro.
+Sirve para reinstalar un juego que quedó mal, o para volver a una versión anterior. Con
+**"Fijar esta versión"** el juego no se marca como desactualizado ni se auto-actualiza (📌) hasta
+que actualices a mano con ⟳. Como cualquier actualización, se puede deshacer con ↶.
+
 ## Actualizaciones
 
 - La comprobación automática al arrancar consulta cada repositorio como mucho cada 6 horas. Las respuestas se cachean con ETag, así que no gastan cuota de la API.

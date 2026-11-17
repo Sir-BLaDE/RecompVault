@@ -36,6 +36,8 @@ public class AppConfig
     public int UndoBackupsToKeep { get; set; } = 1;
     /// <summary>Vínculo elegido a mano en "Detección": folderPath → repositorio/app de Quiver (o desvinculado).</summary>
     public Dictionary<string, LinkOverride> LinkOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Versiones fijadas (folderPath → tag): no se marcan como desactualizadas ni se auto-actualizan.</summary>
+    public Dictionary<string, string> PinnedVersions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public class LinkOverride
@@ -96,6 +98,7 @@ public static class ConfigService
         c.NameOverrides = new(c.NameOverrides ?? new(), StringComparer.OrdinalIgnoreCase);
         c.LastPlayed = new(c.LastPlayed ?? new(), StringComparer.OrdinalIgnoreCase);
         c.LinkOverrides = new(c.LinkOverrides ?? new(), StringComparer.OrdinalIgnoreCase);
+        c.PinnedVersions = new(c.PinnedVersions ?? new(), StringComparer.OrdinalIgnoreCase);
         if (c.UndoBackupsToKeep < 1) c.UndoBackupsToKeep = 1;
         c.Favorites = c.Favorites.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         c.Hidden = c.Hidden.Distinct(StringComparer.OrdinalIgnoreCase).ToList();

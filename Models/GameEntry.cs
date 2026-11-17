@@ -87,7 +87,14 @@ public class GameEntry : INotifyPropertyChanged
     private string _latestVersion = "";
     public string LatestVersion { get => _latestVersion; set { if (Set(ref _latestVersion, value ?? "")) RaiseVersion(); } }
 
-    public bool HasUpdate => VersionUtil.IsUpdate(InstalledVersion, LatestVersion);
+    private string _pinnedVersion = "";
+    /// <summary>Versión fijada por el usuario: no se avisa ni se auto-actualiza.</summary>
+    public string PinnedVersion { get => _pinnedVersion; set { if (Set(ref _pinnedVersion, value ?? "")) { OnPropertyChanged(nameof(IsPinned)); RaiseVersion(); } } }
+    public bool IsPinned => !string.IsNullOrWhiteSpace(PinnedVersion);
+
+    public bool HasUpdate => !IsPinned && VersionUtil.IsUpdate(InstalledVersion, LatestVersion);
+    /// <summary>Hay una versión más nueva aunque esté fijada.</summary>
+    public bool HasNewerThanInstalled => VersionUtil.IsUpdate(InstalledVersion, LatestVersion);
     public bool HasVersionInfo => !string.IsNullOrWhiteSpace(InstalledVersion) || !string.IsNullOrWhiteSpace(LatestVersion);
     public bool InstalledUnknown => string.IsNullOrWhiteSpace(InstalledVersion);
 
@@ -95,6 +102,8 @@ public class GameEntry : INotifyPropertyChanged
     {
         get
         {
+            if (IsPinned) return $"📌 {(string.IsNullOrWhiteSpace(InstalledVersion) ? PinnedVersion : InstalledVersion)}" +
+                                 (HasNewerThanInstalled ? $" (fijada; última {LatestVersion})" : " (fijada)");
             if (HasUpdate) return $"{InstalledVersion} → {LatestVersion}";
             if (!string.IsNullOrWhiteSpace(InstalledVersion))
                 return string.IsNullOrWhiteSpace(LatestVersion) || VersionUtil.Equivalent(InstalledVersion, LatestVersion)
