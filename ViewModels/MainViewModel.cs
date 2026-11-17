@@ -209,6 +209,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand RepairCommand { get; }
     public ICommand CancelUpdateCommand { get; }
     public ICommand ExploreCommand { get; }
+    public ICommand VerifyFingerprintCommand { get; }
     public ICommand DesktopShortcutCommand { get; }
     public ICommand AddToSteamCommand { get; }
     public ICommand OpenSelfUpdateCommand { get; }
@@ -273,6 +274,7 @@ public class MainViewModel : INotifyPropertyChanged
             Status = err == null ? $"Acceso directo creado en el escritorio: {g.Name}" : $"No se pudo crear el acceso directo: {err}";
         });
         AddToSteamCommand = new RelayCommand(o => { if (o is GameEntry g) AddToSteam(g); });
+        VerifyFingerprintCommand = new RelayCommand(o => { if (o is GameEntry g) VerifyMany(new[] { g }, interactive: true); });
         OpenSelfUpdateCommand = new RelayCommand(_ => { if (_selfUpdateUrl != null) LauncherService.OpenUrl(_selfUpdateUrl); });
         UndoManagerCommand = new RelayCommand(_ => { var d = new UndoManagerDialog(this) { Owner = ActiveOwner() }; d.ShowDialog(); });
         SettingsCommand = new RelayCommand(_ => OpenSettings());
@@ -299,6 +301,65 @@ public class MainViewModel : INotifyPropertyChanged
     {
         var app = System.Windows.Application.Current;
         return app?.Windows.OfType<System.Windows.Window>().FirstOrDefault(w => w.IsActive && w.IsVisible) ?? app?.MainWindow;
+    }
+
+    private bool _verifying;
+
+    /// <summary>Verifica por huella uno o varios juegos (en segundo plano, con progreso en la barra de estado).</summary>
+    public void VerifyMany(IReadOnlyList<GameEntry> games, bool interactive = false)
+    {
+        if (_verifying) { Status = "Ya hay una verificación en curso."; return; }
+        if (games.Count == 0) return;
+        _verifying = true;
+        var lib = QuiverService.Load(Config);
+        Task.Run(async () =>
+        {
+            int ok = 0, no = 0, i = 0;
+            FingerprintResult? last = null;
+            foreach (var g in games)
+            {
+                i++;
+                var n = i;
+                var candidates = FingerprintService.CandidatesFor(g, lib, includeSuggestions: string.IsNullOrWhiteSpace(g.Repository));
+                FingerprintResult r;
+                try
+                {
+                    r = await FingerprintService.VerifyAsync(g, candidates, Config,
+                        new Progress<string>(s => UiThread.Run(() => Status = games.Count > 1 ? $"Huella ({n}/{games.Count}) {g.Name}: {s}" : s)));
+                }
+                catch (Exception ex) { r = new FingerprintResult(false, "", null, null, null, ex.Message); }
+                last = r;
+                if (r.Matched)
+                {
+                    ok++;
+                    FingerprintService.Apply(g, r, Config);
+                    UiThread.RunSync(() => g.Fingerprint = "✔ " + r.Version);
+                    await RefreshDetection(g, lib);
+                }
+                else
+                {
+                    no++;
+                    UiThread.RunSync(() => g.Fingerprint = candidates.Count == 0 ? "" : "✖ no coincide");
+                    Log.Info($"Huella sin coincidencia {g.Name}: {r.Message}");
+                }
+            }
+            UiThread.Run(() =>
+            {
+                _verifying = false;
+                RaiseUpdateCounts();
+                if (games.Count == 1 && last != null)
+                {
+                    var g = games[0];
+                    Status = last.Matched ? $"✔ {g.Name}: {last.Message}" : $"✖ {g.Name}: {last.Message}";
+                    if (interactive)
+                        DialogService.Info(last.Matched ? "Verificado por huella" : "Sin coincidencia",
+                            last.Matched
+                                ? $"{g.Name}\n\n{last.Message}\n\nEl vínculo queda verificado (seguro para auto-actualizar) y la versión instalada es {last.Version}."
+                                : $"{g.Name}\n\n{last.Message}\n\nSi el vínculo actual es erróneo, cámbialo en ℹ (Detección) o márcalo \"sin vincular\".");
+                }
+                else Status = $"Verificación por huella: {ok} confirmados, {no} sin coincidencia (detalles en el registro).";
+            });
+        });
     }
 
     private void AddToSteam(GameEntry g)
@@ -415,6 +476,12 @@ public class MainViewModel : INotifyPropertyChanged
         var dlg = new DetectionDialog(g, Config, lib) { Owner = ActiveOwner() };
         if (dlg.ShowDialog() != true) return;
         if (dlg.UndoRequested) { UndoUpdate(g); return; }
+        if (dlg.VerifyRequested)
+        {
+            if (dlg.Saved) await RefreshDetection(g, lib);
+            VerifyMany(new[] { g }, interactive: true);
+            return;
+        }
         if (dlg.InstallVersionRequested)
         {
             if (dlg.Saved) await RefreshDetection(g, lib); // el vínculo nuevo tiene que estar aplicado antes de listar releases

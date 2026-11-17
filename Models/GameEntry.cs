@@ -193,6 +193,10 @@ public class GameEntry : INotifyPropertyChanged
     private bool _updatedByOldVersion;
     public bool UpdatedByOldVersion { get => _updatedByOldVersion; set { if (Set(ref _updatedByOldVersion, value)) OnPropertyChanged(nameof(ReviewFlags)); } }
 
+    private string _fingerprint = "";
+    /// <summary>Resultado de la última verificación por huella ("✔ v1.2" / "✖ no coincide").</summary>
+    public string Fingerprint { get => _fingerprint; set { if (Set(ref _fingerprint, value ?? "")) OnPropertyChanged(nameof(ReviewFlags)); } }
+
     /// <summary>Resumen de avisos para la revisión en bloque.</summary>
     public string ReviewFlags
     {
@@ -205,6 +209,8 @@ public class GameEntry : INotifyPropertyChanged
             if (HasUpdate) f.Add("actualización");
             if (IsPinned) f.Add("📌");
             if (UpdatedByOldVersion) f.Add("RV antiguo");
+            if (Fingerprint.StartsWith("✖")) f.Add("✖ huella");
+            else if (LinkSource.StartsWith("Verificado")) f.Add("✔ huella");
             if (string.IsNullOrWhiteSpace(LaunchPath)) f.Add("sin exe");
             return string.Join(" · ", f);
         }

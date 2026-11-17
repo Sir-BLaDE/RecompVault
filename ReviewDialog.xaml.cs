@@ -48,6 +48,8 @@ public partial class ReviewDialog : Window
             "oldrv" => list.Where(g => g.UpdatedByOldVersion),
             "noexe" => list.Where(g => string.IsNullOrWhiteSpace(g.LaunchPath)),
             "pinned" => list.Where(g => g.IsPinned),
+            "unverified" => list.Where(g => !string.IsNullOrWhiteSpace(g.Repository) && !g.LinkSource.StartsWith("Verificado")),
+            "fpbad" => list.Where(g => g.Fingerprint.StartsWith("✖")),
             _ => list
         };
         if (q.Length > 0)
@@ -74,6 +76,19 @@ public partial class ReviewDialog : Window
     private void Grid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (Grid.SelectedItem is GameEntry g) _vm.OpenDetection(g);
+    }
+
+    private void Verify_Click(object sender, RoutedEventArgs e)
+    {
+        var sel = Selected();
+        if (sel.Count == 0) sel = (Grid.ItemsSource as IEnumerable<GameEntry>)?.ToList() ?? new();
+        if (sel.Count == 0) return;
+        if (sel.Count > 1 && !DialogService.Confirm("Verificar por huella",
+                $"¿Verificar {sel.Count} juegos contra sus releases? Puede tardar unos minutos; el progreso sale en la barra de estado de la ventana principal.",
+                "Verificar", "Cancelar"))
+            return;
+        _vm.VerifyMany(sel);
+        CountText.Text = $"Verificando {sel.Count} juegos... (progreso en la ventana principal; esta tabla se actualiza al volver a ella)";
     }
 
     private void Confirm_Click(object sender, RoutedEventArgs e)

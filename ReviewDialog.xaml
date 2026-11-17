@@ -57,6 +57,8 @@
                 <ComboBoxItem Content="Actualizados por RecompVault antiguo" Tag="oldrv"/>
                 <ComboBoxItem Content="Sin ejecutable" Tag="noexe"/>
                 <ComboBoxItem Content="Versión fijada" Tag="pinned"/>
+                <ComboBoxItem Content="Sin verificar por huella (vinculados)" Tag="unverified"/>
+                <ComboBoxItem Content="✖ Huella no coincide" Tag="fpbad"/>
             </ComboBox>
             <TextBox x:Name="SearchBox" Margin="10,0,0,0" Padding="8,5" TextChanged="Filter_Changed" ToolTip="Buscar por nombre, carpeta o repositorio"/>
         </DockPanel>
@@ -70,6 +72,8 @@
             <Button DockPanel.Dock="Right" Content="✔ Confirmar vínculo de seleccionados" Style="{StaticResource GhostButton}" Margin="0,0,8,0" Click="Confirm_Click"
                     ToolTip="El vínculo actual pasa a ser manual (seguro): ya podrá auto-actualizarse"/>
             <Button DockPanel.Dock="Right" Content="ℹ Detección..." Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="Detail_Click"/>
+            <Button DockPanel.Dock="Right" Content="🔬 Verificar seleccionados" Style="{StaticResource GhostButton}" Margin="0,0,8,0" Click="Verify_Click"
+                    ToolTip="Confirma vínculo y versión comparando con los releases de GitHub (SHA-256 del paquete o CRC32 del ejecutable)"/>
         </DockPanel>
 
         <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource EdgeBrush}" BorderThickness="1" CornerRadius="10" Padding="2">
@@ -82,6 +86,7 @@
                     <DataGridTextColumn Header="Nombre" Binding="{Binding Name}" Width="2*"/>
                     <DataGridTextColumn Header="Sistema" Binding="{Binding System}" Width="80"/>
                     <DataGridTextColumn Header="Avisos" Binding="{Binding ReviewFlags}" Width="1.4*"/>
+                    <DataGridTextColumn Header="Huella" Binding="{Binding Fingerprint}" Width="100"/>
                     <DataGridTextColumn Header="Vínculo" Binding="{Binding LinkSource}" Width="2*"/>
                     <DataGridTextColumn Header="Repositorio" Binding="{Binding Repository}" Width="1.6*"/>
                     <DataGridTextColumn Header="Instalada" Binding="{Binding InstalledVersion}" Width="90"/>

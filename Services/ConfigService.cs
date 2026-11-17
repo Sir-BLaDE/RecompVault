@@ -66,6 +66,9 @@ public class LinkOverride
     public string? Repository { get; set; }
     public string? Provider { get; set; }
     public string? AssetFilter { get; set; }
+    /// <summary>Confirmado por huella (SHA-256 del paquete o CRC32 del ejecutable frente al release).</summary>
+    public bool Verified { get; set; }
+    public string? VerifiedNote { get; set; }
 }
 
 /// <summary>

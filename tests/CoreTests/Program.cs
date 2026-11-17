@@ -126,6 +126,37 @@ try
 }
 finally { try { Directory.Delete(exeDir, true); } catch { } }
 
+// ---------------------------------------------------------------- índice de zip (verificación por huella)
+var zipDir = Path.Combine(Path.GetTempPath(), "rv_zip_" + Guid.NewGuid().ToString("N"));
+try
+{
+    Directory.CreateDirectory(zipDir);
+    var exeLocal = Path.Combine(zipDir, "Game.exe");
+    var rnd = new Random(7); var exeBytes = new byte[300_000]; rnd.NextBytes(exeBytes);
+    File.WriteAllBytes(exeLocal, exeBytes);
+    var zipPath = Path.Combine(zipDir, "pkg.zip");
+    using (var za = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Create))
+    {
+        System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(za, exeLocal, "Game-v1.2/Game.exe");
+        var e2 = za.CreateEntry("Game-v1.2/data/readme.txt");
+        using (var w = new StreamWriter(e2.Open())) w.Write("hola");
+        for (int k = 0; k < 400; k++) { var ek = za.CreateEntry($"Game-v1.2/assets/f{k}.bin"); using var sw = ek.Open(); sw.WriteByte((byte)k); }
+    }
+    var all = File.ReadAllBytes(zipPath);
+    var tail = all[^Math.Min(all.Length, 8192)..];
+    var loc = ZipIndex.FindCentralDirectory(tail, all.Length);
+    Check("EOCD encontrado", loc != null);
+    var cdBytes = all[(int)loc!.Offset..(int)(loc.Offset + loc.Size)];
+    var entries = ZipIndex.ParseCentralDirectory(cdBytes);
+    Check($"entradas leídas ({entries.Count})", entries.Count == 402);
+    var crcLocal = ZipIndex.FileCrc32(exeLocal);
+    Check("exe local coincide con el zip", ZipIndex.FindMatch(entries, "Game.exe", exeBytes.Length, crcLocal) != null);
+    exeBytes[10] ^= 0xFF; File.WriteAllBytes(exeLocal, exeBytes);
+    Check("exe modificado no coincide", ZipIndex.FindMatch(entries, "Game.exe", exeBytes.Length, ZipIndex.FileCrc32(exeLocal)) == null);
+    Check("no-zip devuelve null", ZipIndex.FindCentralDirectory(new byte[100], 100) == null);
+}
+finally { try { Directory.Delete(zipDir, true); } catch { } }
+
 // ---------------------------------------------------------------- Steam y sistemas
 Check("crc32 conocido", SteamShortcuts.Crc32(System.Text.Encoding.ASCII.GetBytes("123456789")) == 0xCBF43926);
 var (vdf1, id1, upd1) = SteamShortcuts.AddOrUpdate(null, "Zelda 64", @"D:\J\z.exe", @"D:\J", @"D:\J\z.exe", "", new[] { "RecompVault", "N64" });

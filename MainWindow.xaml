@@ -158,6 +158,7 @@
                         <MenuItem Header="⟳ Actualizar" Command="{Binding Tag.UpdateGameCommand}" CommandParameter="{Binding DataContext}"/>
                         <MenuItem Header="⇩ Instalar una versión concreta..." Command="{Binding Tag.InstallVersionCommand}" CommandParameter="{Binding DataContext}"/>
                         <MenuItem Header="🛠 Reparar (reinstalar la versión instalada)..." Command="{Binding Tag.RepairCommand}" CommandParameter="{Binding DataContext}"/>
+                        <MenuItem Header="🔬 Verificar con GitHub (huella)" Command="{Binding Tag.VerifyFingerprintCommand}" CommandParameter="{Binding DataContext}"/>
                         <MenuItem Header="↶ Deshacer última actualización" Command="{Binding Tag.UndoUpdateCommand}" CommandParameter="{Binding DataContext}"/>
                         <MenuItem Header="Abrir página de releases" Command="{Binding Tag.OpenRepositoryCommand}" CommandParameter="{Binding DataContext}"/>
                         <Separator/>

@@ -40,6 +40,16 @@ public partial class DetectionDialog : Window
     public bool Saved { get; private set; }
     /// <summary>El usuario pidió deshacer la última actualización.</summary>
     public bool UndoRequested { get; private set; }
+    /// <summary>El usuario pidió verificar por huella (tras guardar).</summary>
+    public bool VerifyRequested { get; private set; }
+
+    private void Verify_Click(object sender, RoutedEventArgs e)
+    {
+        VerifyRequested = true;
+        Save_Click(sender, e);
+        if (DialogResult != true) VerifyRequested = false;
+    }
+
     /// <summary>El usuario pidió instalar una versión concreta (tras guardar los cambios del vínculo).</summary>
     public bool InstallVersionRequested { get; private set; }
 

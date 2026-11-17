@@ -68,6 +68,19 @@ public static class QuiverMatcher
         return null;
     }
 
+    /// <summary>Candidatos con alguna prueba fuerte, de más a menos probable (para verificar por huella).</summary>
+    public static List<QuiverApp> Candidates(QuiverLibrary lib, string folderPath, string gameName, int max = 3)
+    {
+        var folderName = Path.GetFileName(folderPath.TrimEnd('\\', '/'));
+        var hints = Hints(folderPath);
+        return lib.Apps
+            .Where(c => !string.IsNullOrWhiteSpace(c.Repository) && StrongEvidence(folderName, hints, c))
+            .Select(c => (c, s: Score(folderName, gameName, hints, c.FolderName, c.Name, c.Project, c.Repository, isApp: true)))
+            .OrderByDescending(x => x.s)
+            .GroupBy(x => x.c.Repository + "|" + x.c.AssetFilter, StringComparer.OrdinalIgnoreCase).Select(gr => gr.First().c)
+            .Take(max).ToList();
+    }
+
     /// <summary>Pruebas que no dependen de palabras sueltas ("super", "mario"...).</summary>
     private static bool StrongEvidence(string folderName, FolderHints hints, QuiverApp c)
     {

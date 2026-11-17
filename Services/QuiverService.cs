@@ -75,6 +75,7 @@ public static class QuiverService
             g.LinkSource = app != null ? "Manual: app de Quiver + repositorio" : "Manual: repositorio";
         }
         if (ov.AssetFilter != null) g.AssetFilter = string.IsNullOrWhiteSpace(ov.AssetFilter) ? null : ov.AssetFilter.Trim();
+        if (ov.Verified) g.LinkSource = "Verificado por huella — " + (ov.VerifiedNote ?? "");
     }
 
     /// <summary>Aplica la última versión conocida por Quiver (sin red). Nunca toca la instalada.</summary>

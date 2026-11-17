@@ -40,6 +40,8 @@
             <Button DockPanel.Dock="Left" Content="↺ Restablecer todo a automático" Style="{StaticResource GhostButton}" Padding="12,6" Click="Reset_Click"
                     ToolTip="Borra nombre, ejecutable y vínculo elegidos a mano para esta carpeta"/>
             <Button DockPanel.Dock="Right" Content="Guardar" Style="{StaticResource PrimaryButton}" MinWidth="110" IsDefault="True" Click="Save_Click"/>
+            <Button DockPanel.Dock="Right" Content="🔬 Guardar y verificar con GitHub" Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0" Click="Verify_Click"
+                    ToolTip="Compara el paquete instalado (SHA-256) o el ejecutable (CRC32) con los releases del repositorio para confirmar vínculo y versión"/>
             <Button DockPanel.Dock="Right" Content="⇩ Guardar e instalar versión..." Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0" Click="InstallVersion_Click"
                     ToolTip="Guarda los cambios y abre la lista de releases del repositorio para instalar la versión que elijas"/>
             <Button DockPanel.Dock="Right" Content="Cancelar" Style="{StaticResource GhostButton}" MinWidth="100" Margin="0,0,8,0" IsCancel="True"/>

@@ -73,6 +73,17 @@ puntuación), repositorio, filtro de paquete, versiones y portada. Desde ahí pu
 
 "Restablecer todo a automático" borra lo elegido a mano para esa carpeta.
 
+## Verificación por huella (🔬)
+
+Para descartar falsas detecciones, RecompVault puede confirmar el vínculo comparando lo que tienes instalado con los releases del repositorio:
+
+1. **SHA-256 del paquete**: si Quiver dejó `installed-build.txt`, se compara con el `digest` que GitHub publica para cada asset.
+2. **CRC32 + tamaño del ejecutable**: si no hay hash, se lee solo el directorio central de cada `.zip` del release (peticiones HTTP Range, unos KB por archivo, sin descargar el paquete) y se busca el `.exe` de lanzamiento con el mismo CRC32 y tamaño.
+
+Se revisan hasta 25 releases por repositorio (incluidos los candidatos alternativos si el vínculo actual no coincide). Si hay coincidencia, el vínculo queda marcado como **Verificado por huella** y la versión instalada se fija a ese tag. Si no coincide con nada, se marca **✖ huella** para revisarlo a mano. Requiere que el repositorio conserve releases antiguos.
+
+Dónde: menú contextual de la carátula, botón **🔬 Guardar y verificar con GitHub** en ℹ, y **🔬 Verificar seleccionados** en 🔍 Revisar (con filtros "Sin verificar" y "Huella no coincide" y columna *Huella*). Con muchos juegos conviene un token de GitHub en Ajustes.
+
 ## Deshacer actualización
 
 Antes de escribir cada fichero, la actualización mueve el original a
