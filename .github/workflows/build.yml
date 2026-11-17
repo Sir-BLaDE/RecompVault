@@ -1,0 +1,36 @@
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Pruebas del núcleo
+        run: dotnet run --project tests/CoreTests -c Release
+
+  windows:
+    runs-on: windows-latest
+    needs: core-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Compilar
+        run: dotnet build RecompVault.csproj -c Release
+      - name: Publicar (exe único, requiere .NET 10 Desktop Runtime)
+        run: dotnet publish RecompVault.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RecompVault-win-x64
+          path: publish/RecompVault.exe
+          if-no-files-found: error

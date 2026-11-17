@@ -7,7 +7,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Assets\RecompVault.ico</ApplicationIcon>
+    <Version>2.0.0</Version>
+    <Product>RecompVault</Product>
+    <Description>Launcher de recomps y ports con integración de Quiver Launcher</Description>
+    <SatelliteResourceLanguages>es;en</SatelliteResourceLanguages>
+    <!-- Permite compilar desde Linux/macOS (CI) -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- El proyecto de pruebas tiene su propio csproj -->
+    <Compile Remove="tests/**" />
+    <None Remove="tests/**" />
+    <Page Remove="tests/**" />
+  </ItemGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="gametitles.json" />
     <Resource Include="Assets\RecompVault.ico" />

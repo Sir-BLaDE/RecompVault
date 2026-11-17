@@ -29,15 +29,23 @@ public static class DialogService
         };
     }
 
+    private static Window? FindOwner()
+    {
+        var app = Application.Current;
+        if (app == null) return null;
+        var w = app.Windows.OfType<Window>().FirstOrDefault(x => x.IsActive) ?? app.MainWindow;
+        return w != null && w.IsLoaded && w.IsVisible ? w : null;
+    }
+
     public static string? Prompt(string title, string message, string defaultValue = "", string okText = "Guardar")
     {
         var w = new Window
         {
             Title = title,
-            Width = 520,
-            Height = 190,
+            Width = 540,
+            SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(x => x.IsActive) ?? Application.Current?.MainWindow,
+            Owner = FindOwner(),
             ResizeMode = ResizeMode.NoResize,
             Background = Brush("BgBrush", "#0F1115"),
             Foreground = Brush("TextBrush", "#E6E8EE"),
@@ -91,7 +99,7 @@ public static class DialogService
             SizeToContent = SizeToContent.Height,
             MinHeight = 150,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(x => x.IsActive) ?? Application.Current?.MainWindow,
+            Owner = FindOwner(),
             ResizeMode = ResizeMode.NoResize,
             Background = Brush("BgBrush", "#0F1115"),
             Foreground = Brush("TextBrush", "#E6E8EE"),
@@ -130,6 +138,8 @@ public static class DialogService
 
     public static void Info(string title, string message, string okText = "Aceptar")
     {
+        var d = Application.Current?.Dispatcher;
+        if (d != null && !d.CheckAccess()) { d.Invoke(() => Info(title, message, okText)); return; }
         var w = new Window
         {
             Title = title,
@@ -137,7 +147,7 @@ public static class DialogService
             SizeToContent = SizeToContent.Height,
             MinHeight = 150,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(x => x.IsActive) ?? Application.Current?.MainWindow,
+            Owner = FindOwner(),
             ResizeMode = ResizeMode.NoResize,
             Background = Brush("BgBrush", "#0F1115"),
             Foreground = Brush("TextBrush", "#E6E8EE"),

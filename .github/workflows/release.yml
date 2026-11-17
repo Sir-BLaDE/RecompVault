@@ -1,0 +1,31 @@
+name: release
+
+# Al subir una etiqueta vX.Y.Z se compila y se publica RecompVault.exe en GitHub Releases.
+# RecompVault avisa en la barra superior cuando hay una versión más nueva que la suya.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Versión desde la etiqueta
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Publicar
+        run: dotnet publish RecompVault.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ env.VERSION }} -o publish
+      - name: Crear release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/RecompVault.exe
+          generate_release_notes: true

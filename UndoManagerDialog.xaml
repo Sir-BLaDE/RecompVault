@@ -1,0 +1,34 @@
+<Window x:Class="RecompVault.UndoManagerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Copias de deshacer" Width="900" Height="600" MinWidth="680" MinHeight="380"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}">
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBlock Text="Copias de deshacer" FontSize="20" FontWeight="Bold"/>
+            <TextBlock x:Name="SummaryText" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Left" Content="🗑 Borrar todas" Style="{StaticResource GhostButton}" Click="DeleteAll_Click"/>
+            <Button DockPanel.Dock="Right" Content="Cerrar" Style="{StaticResource GhostButton}" MinWidth="90" IsCancel="True" Click="Close_Click"/>
+            <Button DockPanel.Dock="Right" Content="🗑 Borrar copia" Style="{StaticResource GhostButton}" Margin="0,0,8,0" Click="Delete_Click"/>
+            <Button DockPanel.Dock="Right" Content="↶ Deshacer actualización" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="Undo_Click"/>
+        </DockPanel>
+        <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource EdgeBrush}" BorderThickness="1" CornerRadius="10" Padding="4">
+            <ListBox x:Name="List" Background="Transparent" BorderThickness="0" SelectionMode="Extended" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <DockPanel Margin="6,6">
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding Size}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Detail}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+    </DockPanel>
+</Window>

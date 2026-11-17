@@ -1,0 +1,153 @@
+<Window x:Class="RecompVault.DetectionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Detección" Width="900" SizeToContent="Height" MaxHeight="900" MinWidth="760"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}">
+    <Window.Resources>
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style x:Key="Source" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Accent2Brush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,3,0,10"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style x:Key="Section" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Margin" Value="0,6,0,8"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Margin="18">
+        <!-- cabecera -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <TextBlock x:Name="HeaderText" FontSize="20" FontWeight="Bold" TextWrapping="Wrap"/>
+            <DockPanel Margin="0,4,0,0">
+                <Button DockPanel.Dock="Right" Content="📁 Abrir carpeta" Style="{StaticResource GhostButton}" Padding="10,4" Click="OpenFolder_Click"/>
+                <TextBlock x:Name="FolderText" Foreground="{StaticResource MutedBrush}" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+        </StackPanel>
+
+        <!-- botones -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,14,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Left" Content="↺ Restablecer todo a automático" Style="{StaticResource GhostButton}" Padding="12,6" Click="Reset_Click"
+                    ToolTip="Borra nombre, ejecutable y vínculo elegidos a mano para esta carpeta"/>
+            <Button DockPanel.Dock="Right" Content="Guardar" Style="{StaticResource PrimaryButton}" MinWidth="110" IsDefault="True" Click="Save_Click"/>
+            <Button DockPanel.Dock="Right" Content="🔬 Guardar y verificar con GitHub" Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0" Click="Verify_Click"
+                    ToolTip="Compara el paquete instalado (SHA-256) o el ejecutable (CRC32) con los releases del repositorio para confirmar vínculo y versión"/>
+            <Button DockPanel.Dock="Right" Content="⇩ Guardar e instalar versión..." Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0" Click="InstallVersion_Click"
+                    ToolTip="Guarda los cambios y abre la lista de releases del repositorio para instalar la versión que elijas"/>
+            <Button DockPanel.Dock="Right" Content="Cancelar" Style="{StaticResource GhostButton}" MinWidth="100" Margin="0,0,8,0" IsCancel="True"/>
+        </DockPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource EdgeBrush}" BorderThickness="1" CornerRadius="10" Padding="16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/> <!-- 0 sección -->
+                        <RowDefinition Height="Auto"/> <!-- 1 nombre -->
+                        <RowDefinition Height="Auto"/> <!-- 2 sistema -->
+                        <RowDefinition Height="Auto"/> <!-- 3 exe -->
+                        <RowDefinition Height="Auto"/> <!-- 4 sección -->
+                        <RowDefinition Height="Auto"/> <!-- 5 quiver -->
+                        <RowDefinition Height="Auto"/> <!-- 6 repo -->
+                        <RowDefinition Height="Auto"/> <!-- 7 filtro -->
+                        <RowDefinition Height="Auto"/> <!-- 7b protegidos -->
+                        <RowDefinition Height="Auto"/> <!-- 8 sección -->
+                        <RowDefinition Height="Auto"/> <!-- 9 versiones -->
+                        <RowDefinition Height="Auto"/> <!-- 10 portada -->
+                        <RowDefinition Height="Auto"/> <!-- 11 deshacer -->
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.ColumnSpan="2" Text="JUEGO" Style="{StaticResource Section}"/>
+
+                    <TextBlock Grid.Row="1" Text="Nombre" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,6,12,0"/>
+                    <StackPanel Grid.Row="1" Grid.Column="1">
+                        <TextBox x:Name="NameBox" Padding="8,5"/>
+                        <TextBlock x:Name="NameSourceText" Style="{StaticResource Source}"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2" Text="Sistema" Style="{StaticResource Label}" VerticalAlignment="Top"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SystemText" Margin="0,0,0,10"/>
+
+                    <TextBlock Grid.Row="3" Text="Ejecutable" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,6,12,0"/>
+                    <StackPanel Grid.Row="3" Grid.Column="1">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Examinar..." Style="{StaticResource GhostButton}" Padding="10,4" Margin="8,0,0,0" Click="BrowseExe_Click"/>
+                            <ComboBox x:Name="ExeBox" DisplayMemberPath="Display" MaxDropDownHeight="360"/>
+                        </DockPanel>
+                        <TextBlock x:Name="LaunchSourceText" Style="{StaticResource Source}"/>
+                        <DockPanel Margin="0,0,0,10">
+                            <CheckBox x:Name="AdminBox" DockPanel.Dock="Right" Content="Como administrador" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            <TextBlock DockPanel.Dock="Left" Text="Argumentos" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox x:Name="ArgsBox" Padding="8,4" ToolTip="Argumentos de línea de comandos al lanzar (p.ej. --fullscreen)"/>
+                        </DockPanel>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Text="VÍNCULO PARA ACTUALIZACIONES" Style="{StaticResource Section}"/>
+
+                    <TextBlock Grid.Row="5" Text="App de Quiver" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,6,12,0"/>
+                    <StackPanel Grid.Row="5" Grid.Column="1">
+                        <TextBox x:Name="QuiverFilterBox" Padding="8,4" Margin="0,0,0,4" ToolTip="Escribe para filtrar la lista de apps de Quiver"/>
+                        <ComboBox x:Name="QuiverBox" DisplayMemberPath="Display" MaxDropDownHeight="420" SelectionChanged="QuiverBox_SelectionChanged"/>
+                        <TextBlock x:Name="LinkSourceText" Style="{StaticResource Source}"/>
+                        <DockPanel x:Name="SuggestPanel" Visibility="Collapsed" Margin="0,-4,0,10">
+                            <Button DockPanel.Dock="Right" Content="Usar sugerencia" Style="{StaticResource GhostButton}" Padding="10,3" Margin="8,0,0,0" Click="UseSuggestion_Click"/>
+                            <TextBlock x:Name="SuggestText" Foreground="{StaticResource WarnBrush}" FontSize="11.5" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        </DockPanel>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="6" Text="Repositorio" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,6,12,0"/>
+                    <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,0,0,10">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Abrir" Style="{StaticResource GhostButton}" Padding="10,4" Margin="8,0,0,0" Click="OpenRepo_Click"/>
+                            <ComboBox DockPanel.Dock="Right" x:Name="ProviderBox" Width="100" Margin="8,0,0,0">
+                                <ComboBoxItem Content="github"/>
+                                <ComboBoxItem Content="gitlab"/>
+                            </ComboBox>
+                            <TextBox x:Name="RepoBox" Padding="8,5" ToolTip="propietario/repositorio, p.ej. Zelda64Recomp/Zelda64Recomp (vacío = sin actualizaciones)"/>
+                        </DockPanel>
+                        <TextBlock Text="propietario/repositorio. Vacío = sin vincular (no se buscan actualizaciones)." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,3,0,0"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="7" Text="Filtro de paquete" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,6,12,0"/>
+                    <StackPanel Grid.Row="7" Grid.Column="1" Margin="0,0,0,10">
+                        <TextBox x:Name="FilterBox" Padding="8,5" ToolTip="Texto o comodines (*, ?) que debe tener el nombre del paquete. Necesario cuando un repositorio publica varios juegos."/>
+                        <TextBlock Text="Opcional. Para repos con varios juegos (p.ej. vf2, SFA2-*.zip)." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,3,0,0"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="8" Text="Protegidos" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,6,12,0"/>
+                    <StackPanel Grid.Row="8" Grid.Column="1" Margin="0,0,0,10">
+                        <TextBox x:Name="ProtectedBox" Padding="8,5" ToolTip="Patrones separados por ';' que nunca se sobrescriben al actualizar si ya existen. Ej.: *.ini; config/user.json; mods/**"/>
+                        <TextBlock x:Name="ProtectedHint" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="9" Grid.ColumnSpan="2" Text="ESTADO" Style="{StaticResource Section}"/>
+
+                    <TextBlock Grid.Row="10" Text="Versiones" Style="{StaticResource Label}" VerticalAlignment="Top"/>
+                    <TextBlock Grid.Row="10" Grid.Column="1" x:Name="VersionText" TextWrapping="Wrap" Margin="0,0,0,10" FontFamily="Consolas, Segoe UI" FontSize="12"/>
+
+                    <TextBlock Grid.Row="11" Text="Portada" Style="{StaticResource Label}" VerticalAlignment="Top"/>
+                    <TextBlock Grid.Row="11" Grid.Column="1" x:Name="CoverText" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="12"/>
+
+                    <TextBlock Grid.Row="12" Text="Deshacer" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,4,12,0"/>
+                    <DockPanel Grid.Row="12" Grid.Column="1">
+                        <Button x:Name="UndoBtn" DockPanel.Dock="Right" Content="↶ Deshacer última actualización" Style="{StaticResource GhostButton}" Padding="10,4" Margin="8,0,0,0" Click="Undo_Click"/>
+                        <TextBlock x:Name="UndoText" TextWrapping="Wrap" FontSize="12" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </Grid>
+            </Border>
+        </ScrollViewer>
+    </DockPanel>
+</Window>
