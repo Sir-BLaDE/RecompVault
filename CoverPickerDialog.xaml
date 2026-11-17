@@ -1,0 +1,66 @@
+<Window x:Class="RecompVault.CoverPickerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Elegir portada online" Height="720" Width="980" MinHeight="520" MinWidth="760"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="HeaderText" FontSize="18" FontWeight="Bold" Margin="0,0,0,10" TextWrapping="Wrap"/>
+
+        <Grid Grid.Row="1" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <ComboBox x:Name="SourceBox" Grid.Column="0" Margin="0,0,8,0" SelectedIndex="0" Padding="8,6">
+                <ComboBoxItem Content="SteamGridDB" Tag="steamgriddb"/>
+                <ComboBoxItem Content="RAWG" Tag="rawg"/>
+                <ComboBoxItem Content="Libretro" Tag="libretro"/>
+                <ComboBoxItem Content="IGDB" Tag="igdb"/>
+                <ComboBoxItem Content="Quiver" Tag="quiver"/>
+            </ComboBox>
+            <TextBox x:Name="QueryBox" Grid.Column="1" Margin="0,0,8,0" Padding="10,6" ToolTip="Texto de búsqueda"/>
+            <Button x:Name="SearchBtn" Grid.Column="2" Content="Buscar" Style="{StaticResource PrimaryButton}" Padding="16,6" Click="Search_Click"/>
+        </Grid>
+
+        <Border Grid.Row="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource EdgeBrush}" BorderThickness="1" CornerRadius="10" Padding="8">
+            <Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="ResultsList">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="170" Margin="6" Background="#141922" BorderBrush="{StaticResource EdgeBrush}" BorderThickness="1" CornerRadius="8" Padding="6" Cursor="Hand" MouseLeftButtonUp="Item_Click" Tag="{Binding}">
+                                    <StackPanel>
+                                        <Border Height="220" CornerRadius="6" ClipToBounds="True" Background="#0A0C11">
+                                            <Image Source="{Binding ThumbImage}" Stretch="UniformToFill"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding Title}" Margin="0,6,0,0" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" MaxHeight="34" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding Source}" Foreground="{StaticResource MutedBrush}" FontSize="10"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <TextBlock x:Name="StatusText" Text="Elige un origen y pulsa Buscar." Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14"/>
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <TextBlock x:Name="HintText" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,16,0" Text="Haz clic en una portada para aplicarla."/>
+            <Button Content="Cancelar" Style="{StaticResource GhostButton}" MinWidth="100" IsCancel="True" Click="Cancel_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

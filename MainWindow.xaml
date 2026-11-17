@@ -1,0 +1,296 @@
+﻿<Window x:Class="RecompVault.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:RecompVault.Converters"
+        Title="RecompVault — Launcher personalizado" Height="860" Width="1380"
+        MinHeight="620" MinWidth="960" WindowStartupLocation="CenterScreen"
+        Icon="Assets/RecompVault.ico">
+    <Window.Resources>
+        <c:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <c:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+    </Window.Resources>
+    <Grid Background="{StaticResource AppBgBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" MinHeight="64"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header (clonado estilo recomp-launcher: barra #0B0E14 + franja acento) -->
+        <Grid Grid.Row="0" Background="{StaticResource HeaderBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="92"/>
+                <RowDefinition Height="4"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Margin="36,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="RecompVault" FontWeight="Bold" FontSize="28" Foreground="{StaticResource TextBrush}"/>
+                    <TextBlock Text="Tu colección de recomps y ports — portadas y metadatos desde Quiver" Foreground="{StaticResource MutedBrush}" FontSize="15" Margin="0,4,0,0"/>
+                </StackPanel>
+                <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <Button Content="Q Quiver" Style="{StaticResource GhostButton}" Command="{Binding SyncQuiverCommand}" Margin="0,0,6,4" ToolTip="Sincronizar nombres, portadas y datos desde Quiver"/>
+                    <Button Content="{Binding UpdatesLabel}" Style="{StaticResource GhostButton}" Command="{Binding CheckUpdatesCommand}" Margin="0,0,6,4" ToolTip="Buscar actualizaciones de recomps (Quiver/GitHub/catálogo)"/>
+                    <Button Content="{Binding AutoUpdateLabel}" Style="{StaticResource GhostButton}" Command="{Binding ToggleAutoUpdateCommand}" Margin="0,0,6,4" ToolTip="Activar/desactivar auto-actualización de recomps reconocidas"/>
+                    <Button Content="⬇ Portadas" Style="{StaticResource GhostButton}" Command="{Binding DownloadAllCoversCommand}" Margin="0,0,6,4" ToolTip="Descargar portadas faltantes (Quiver primero, luego alternativas)"/>
+                    <Button Content="🔑SGDB" Style="{StaticResource GhostButton}" Command="{Binding SetApiKeyCommand}" Margin="0,0,6,4" ToolTip="API key SteamGridDB"/>
+                    <Button Content="🔑RAWG" Style="{StaticResource GhostButton}" Command="{Binding SetRawgKeyCommand}" Margin="0,0,6,4" ToolTip="API key RAWG"/>
+                    <Button Content="🔑IGDB" Style="{StaticResource GhostButton}" Command="{Binding SetIgdbCommand}" Margin="0,0,6,4" ToolTip="Credenciales IGDB/Twitch"/>
+                    <Button Content="⟳ Re-escanear" Style="{StaticResource GhostButton}" Command="{Binding RescanCommand}" Margin="0,0,6,4" ToolTip="Re-escanear biblioteca"/>
+                    <Button Content="📁 Raíz" Style="{StaticResource GhostButton}" Click="OpenRoot_Click" Margin="0,0,6,4" ToolTip="Abrir carpeta raíz"/>
+                    <Button Content="⚙" Style="{StaticResource GhostButton}" Click="Settings_Click" Margin="0,0,0,4" ToolTip="Configurar carpeta raíz"/>
+                </WrapPanel>
+            </Grid>
+            <Rectangle Grid.Row="1" Fill="{StaticResource AccentBrush}"/>
+        </Grid>
+
+        <!-- Body -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Sidebar -->
+            <Border Grid.Column="0" Background="#CC171A21" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0" Padding="14">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="BIBLIOTECA" Foreground="{StaticResource MutedBrush}" FontSize="10" FontWeight="Bold" Margin="4,0,0,8"/>
+                    <Grid Grid.Row="1" Margin="0,0,0,10">
+                        <TextBox x:Name="SearchBox" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" ToolTip="Buscar por nombre, sistema, recomp o ruta" Padding="30,7,10,7" />
+                        <TextBlock Text="🔎  Buscar juegos..." Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <StackPanel Grid.Row="2" Margin="2,0,0,10">
+                        <CheckBox Content="Solo favoritos ★" IsChecked="{Binding FavoritesOnly}" Foreground="{StaticResource TextBrush}" Margin="0,0,0,6"/>
+                        <CheckBox Content="Mostrar ocultos" IsChecked="{Binding ShowHidden}" Foreground="{StaticResource TextBrush}"/>
+                    </StackPanel>
+                    <ListBox Grid.Row="3" ItemsSource="{Binding Systems}" SelectedItem="{Binding SelectedSystem}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="38"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Width="32" Height="32" VerticalAlignment="Center">
+                                        <Border CornerRadius="7" Background="#1E2430" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                                Visibility="{Binding HasLogo, Converter={StaticResource BoolToVis}}">
+                                            <Image Source="{Binding LogoImage}" Stretch="Uniform" Margin="3"/>
+                                        </Border>
+                                        <Border CornerRadius="7" Background="{Binding Accent}" Visibility="{Binding ShowBadge, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding Icon}" Foreground="White" FontWeight="Bold" FontSize="10"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="13" FontWeight="SemiBold"/>
+                                    <Border Grid.Column="2" Background="#232733" CornerRadius="8" Padding="7,2" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Count}" Foreground="{StaticResource MutedBrush}" FontSize="10"/>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Border Grid.Row="4" Background="#141821" CornerRadius="8" Padding="10" Margin="0,10,0,0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding VisibleGames.Count, StringFormat='Mostrando {0} juegos'}" Foreground="{StaticResource Accent2Brush}" FontSize="11" Margin="0,4,0,0" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- Main -->
+            <Grid Grid.Column="1">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12,14,14">
+                    <ItemsControl ItemsSource="{Binding VisibleGames}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CardStyle}" Width="220" Margin="8" Cursor="Hand" Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                                    <Border.ContextMenu>
+                                        <ContextMenu DataContext="{Binding PlacementTarget, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="Cambiar nombre" Command="{Binding Tag.RenameGameCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <MenuItem Header="Ocultar juego" Command="{Binding Tag.HideGameCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <MenuItem Header="Mostrar (desocultar)" Command="{Binding Tag.UnhideGameCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <Separator/>
+                                            <MenuItem Header="Buscar actualización" Command="{Binding Tag.CheckUpdateCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <MenuItem Header="Actualizar recomp" Command="{Binding Tag.UpdateGameCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <Separator/>
+                                            <MenuItem Header="Eliminar juego..." Command="{Binding Tag.DeleteGameCommand}" CommandParameter="{Binding DataContext}"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="300"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Cover / header -->
+                                    <Border Grid.Row="0" CornerRadius="10" ClipToBounds="True">
+                                        <Grid>
+                                            <Border Background="{StaticResource AccentBrush}">
+                                                <Image Source="{Binding CoverImage}" Stretch="UniformToFill" Visibility="{Binding HasCover, Converter={StaticResource BoolToVis}}" />
+                                            </Border>
+                                            <!-- fallback gradient panel when no cover -->
+                                            <Border Visibility="{Binding HasCover, Converter={StaticResource InverseBoolToVis}}">
+                                                <Border.Background>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                        <GradientStop Color="#6D4EFF" Offset="0"/>
+                                                        <GradientStop Color="#243B55" Offset="0.55"/>
+                                                        <GradientStop Color="#141923" Offset="1"/>
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                                <Grid>
+                                                    <TextBlock Text="{Binding SystemInitial}" Foreground="White" FontSize="72" FontWeight="Black" Opacity="0.14"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14">
+                                                        <TextBlock Text="{Binding Name}" Foreground="White" FontSize="14" FontWeight="Bold" TextWrapping="Wrap" TextAlignment="Center"/>
+                                                        <Border Background="#3300D4AA" CornerRadius="10" Padding="8,2" HorizontalAlignment="Center" Margin="0,8,0,0">
+                                                            <TextBlock Text="{Binding System}" Foreground="#00D4AA" FontSize="10" FontWeight="Bold"/>
+                                                        </Border>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                            <!-- gradient overlay for cover -->
+                                            <Border Visibility="{Binding HasCover, Converter={StaticResource BoolToVis}}">
+                                                <Border.Background>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                        <GradientStop Color="#10000000" Offset="0"/>
+                                                        <GradientStop Color="Transparent" Offset="0.35"/>
+                                                        <GradientStop Color="#D90F1115" Offset="1"/>
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                            </Border>
+                                        <!-- logo badge -->
+                                            <Border Width="40" Height="40" CornerRadius="10" Background="#CC141821" BorderBrush="#445066" BorderThickness="1"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10" Visibility="{Binding HasLogo, Converter={StaticResource BoolToVis}}">
+                                                <Image Source="{Binding LogoImage}" Stretch="Uniform" Margin="5"/>
+                                            </Border>
+                                            <!-- title over cover -->
+                                            <StackPanel VerticalAlignment="Bottom" Margin="12,0,12,10"
+                                                        Visibility="{Binding HasCover, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="{Binding Name}" Foreground="White" FontSize="14" FontWeight="Bold" TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding RecompName}" Foreground="#DDE6E8EE" FontSize="10" TextWrapping="Wrap"
+                                                           Visibility="{Binding HasRecompName, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                            <!-- favorite star -->
+                                            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,10,0" Background="#AA141821" CornerRadius="10" Padding="6,1"
+                                                    Visibility="{Binding Favorite, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="★" Foreground="#FFD700" FontSize="14" FontWeight="Bold"/>
+                                            </Border>
+                                            <!-- hidden badge -->
+                                            <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,10,0,0" Background="#CCB02020" CornerRadius="8" Padding="8,3"
+                                                    Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="OCULTO" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                            </Border>
+                                            <!-- update badge -->
+                                            <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10,0,0,10" Background="#CC0F766E" CornerRadius="8" Padding="8,3"
+                                                    Visibility="{Binding HasUpdate, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="ACTUALIZACIÓN" Foreground="White" FontSize="9" FontWeight="Bold"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Name (when no cover, name shown here) -->
+                                    <StackPanel Grid.Row="1" Margin="0,8,0,0" Visibility="{Binding HasCover, Converter={StaticResource InverseBoolToVis}}">
+                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="14" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding RecompName}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                                   Visibility="{Binding HasRecompName, Converter={StaticResource BoolToVis}}"/>
+                                    </StackPanel>
+
+                                    <!-- System badge -->
+                                    <Border Grid.Row="2" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left" Margin="0,8,0,0">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                <GradientStop Color="#00D4AA" Offset="0"/>
+                                                <GradientStop Color="#00A88A" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <TextBlock Text="{Binding System}" Foreground="#081210" FontSize="10" FontWeight="Bold"/>
+                                    </Border>
+
+                                    <!-- Folder path -->
+                                    <TextBlock Grid.Row="3" Text="{Binding FolderPath}" Foreground="#7E8799" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" ToolTip="{Binding FolderPath}"/>
+
+                                    <!-- Launch path -->
+                                    <TextBlock Grid.Row="4" Text="{Binding LaunchPath}" Foreground="#8FB8FF" FontSize="9" TextTrimming="CharacterEllipsis" Margin="0,3,0,0" Opacity="0.9" ToolTip="{Binding LaunchPath}"/>
+
+                                    <!-- Version / update info -->
+                                    <TextBlock Grid.Row="5" Text="{Binding VersionInfo}" Foreground="#00D4AA" FontSize="10" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
+                                               Visibility="{Binding HasVersionInfo, Converter={StaticResource BoolToVis}}" ToolTip="{Binding VersionInfo}"/>
+
+                                    <!-- Buttons -->
+                                    <WrapPanel Grid.Row="6" Margin="0,10,0,0">
+                                        <Button Content="▶ Jugar" Style="{StaticResource PrimaryButton}"
+                                                Command="{Binding DataContext.LaunchCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}" IsEnabled="{Binding CanLaunch}" Padding="12,6" Margin="0,0,6,6"/>
+                                        <Button Content="⟳" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Actualizar recomp"
+                                                Command="{Binding DataContext.UpdateGameCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="★" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Favorito"
+                                                Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="📁" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Abrir carpeta"
+                                                Command="{Binding DataContext.OpenFolderCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="⚙" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Elegir ejecutable"
+                                                Command="{Binding DataContext.PickExeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="🖼" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Elegir carátula local"
+                                                Command="{Binding DataContext.PickCoverCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="🔎" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Buscar y elegir portada online (origen a elegir)"
+                                                Command="{Binding DataContext.SearchCoverCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="⬇" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Descargar portada automática"
+                                                Command="{Binding DataContext.DownloadCoverCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                    </WrapPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                </ScrollViewer>
+                <Border Background="#AA0F1115" Visibility="{Binding HasNoVisibleGames, Converter={StaticResource BoolToVis}}" IsHitTestVisible="False">
+                    <Border Background="#1A1E28" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="28,22" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel>
+                            <TextBlock Text="No se encontraron juegos" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Prueba a cambiar el filtro, la búsqueda o re-escanear la biblioteca." FontSize="13" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>
