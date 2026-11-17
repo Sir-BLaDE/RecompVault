@@ -1,149 +1,153 @@
 using System.IO;
 using System.Net.Http;
-using System.Text.Json;
-using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using RecompVault.Models;
 
 namespace RecompVault.Services;
 
+/// <summary>
+/// Iconos de sistema: siluetas blancas de las consolas del set "monochrome" de RetroArch
+/// (libretro/retroarch-assets, PNG con transparencia, el mismo estilo en todos los sistemas).
+/// Se descargan una vez a %APPDATA%\RecompVault\system_logos_v3. Un PNG propio en
+/// system_logos_custom\&lt;SISTEMA&gt;.png tiene prioridad.
+/// </summary>
 public static class SystemLogoService
 {
     private static readonly HttpClient Http = Create();
-    private static readonly string CacheDir = Path.Combine(ConfigService.Dir, "system_logos_v2");
-    /// <summary>Logos propios del usuario: %APPDATA%\RecompVault\system_logos_custom\&lt;SISTEMA&gt;.png (tienen prioridad).</summary>
+    private static readonly string CacheDir = Path.Combine(ConfigService.Dir, "system_logos_v3");
     public static readonly string CustomDir = Path.Combine(ConfigService.Dir, "system_logos_custom");
-    /// <summary>Sistemas ya intentados en esta sesión (evita repetir descargas fallidas en cada filtro).</summary>
-    private static readonly HashSet<string> Attempted = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, ImageSource> Loaded = new(StringComparer.OrdinalIgnoreCase);
 
-    // Curated: prefer official wordmark/logos (con letras). Using Commons redirect for reliable thumbnails.
-    private static readonly Dictionary<string, string[]> LogoSources = new(StringComparer.OrdinalIgnoreCase)
+    // commit fijo: las URLs no cambian aunque el repositorio se reorganice
+    private const string Base = "https://raw.githubusercontent.com/libretro/retroarch-assets/8c918e2872482139273374ef4cc6c7aff34d7585/xmb/monochrome/png/";
+
+    private static readonly Dictionary<string, string> Icons = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["3DS"] = new[] { Commons("Nintendo_3DS_logo.svg") },
-        ["Arcade"] = new[] { Commons("MAMELogo.svg") },
-        ["DS"] = new[] { Commons("Nintendo_DS_Logo.svg") },
-        ["GBA"] = new[] { Commons("Gameboy_advance_logo.svg") },
-        ["GC"] = new[] { Commons("Nintendo_GameCube_Official_Logo.svg"), Commons("Nintendo_Gamecube_Logo.svg") },
-        ["MEGADRIVE"] = new[] { Commons("Mega_Drive_Logo.svg"), Commons("Sega_genesis_logo.svg") },
-        ["N64"] = new[] { Commons("Nintendo_64_wordmark.svg") },
-        ["PC"] = new[] { Commons("Windows_logo_-_2012.svg") },
-        ["PCE"] = new[] { Commons("TurboGrafx-16_Logo.svg"), Commons("PC_Engine_logo.svg"), Commons("TurboGrafx16logo.jpg") },
-        ["PS2"] = new[] { Commons("PlayStation_2_logo.svg") },
-        ["PS4"] = new[] { Commons("PlayStation_4_logo_and_wordmark.svg") },
-        ["PSX"] = new[] { Commons("Playstation_logo_colour.svg"), Commons("PlayStation_logo.svg") },
-        ["SNES"] = new[] { Commons("Super_Nintendo_Entertainment_System_logo.svg"), Commons("Nintendo_Super_Famicom_logo.svg") },
-        ["SWITCH"] = new[] { Commons("NintendoSwitchLogo.svg") },
-        ["SWITCH 2"] = new[] { Commons("Nintendo_Switch_2_logo.svg") },
-        ["WII"] = new[] { Commons("Wii.svg") },
-        ["WIIU"] = new[] { Commons("WiiU.svg") },
-        ["X360"] = new[] { Commons("Xbox_360_wordmark.svg"), Commons("Xbox_360_logo.svg") },
-        ["DREAMCAST"] = new[] { Commons("Dreamcast_logo.svg") },
-        ["SATURN"] = new[] { Commons("Sega_Saturn_Logo.svg") },
-        ["PS3"] = new[] { Commons("PlayStation_3_logo_(2009).svg"), Commons("PlayStation3Logo.svg") },
-        ["PSP"] = new[] { Commons("PSP_Logo.svg") },
-        ["NES"] = new[] { Commons("NES_logo.svg") },
-        ["GB"] = new[] { Commons("Game_Boy_logo.svg") },
-        ["GBC"] = new[] { Commons("Game_Boy_Color_logo.svg") },
-        ["XBOX"] = new[] { Commons("Xbox_logo_(2005).svg"), Commons("Xbox_2005.svg") },
+        ["N64"] = "Nintendo - Nintendo 64",
+        ["SNES"] = "Nintendo - Super Nintendo Entertainment System",
+        ["NES"] = "Nintendo - Nintendo Entertainment System",
+        ["GB"] = "Nintendo - Game Boy",
+        ["GBC"] = "Nintendo - Game Boy Color",
+        ["GBA"] = "Nintendo - Game Boy Advance",
+        ["GC"] = "Nintendo - GameCube",
+        ["DS"] = "Nintendo - Nintendo DS",
+        ["3DS"] = "Nintendo - Nintendo 3DS",
+        ["WII"] = "Nintendo - Wii",
+        ["WIIU"] = "Nintendo - Wii U",
+        ["SWITCH"] = "Nintendo - Switch",
+        ["SWITCH 2"] = "Nintendo - Switch",
+        ["PSX"] = "Sony - PlayStation",
+        ["PS2"] = "Sony - PlayStation 2",
+        ["PS3"] = "Sony - PlayStation 3",
+        ["PS4"] = "Sony - PlayStation 4",
+        ["PSP"] = "Sony - PlayStation Portable",
+        ["XBOX"] = "Microsoft - Xbox",
+        ["X360"] = "Microsoft - Xbox 360",
+        ["MEGADRIVE"] = "Sega - Mega Drive - Genesis",
+        ["SATURN"] = "Sega - Saturn",
+        ["DREAMCAST"] = "Sega - Dreamcast",
+        ["PCE"] = "NEC - PC Engine - TurboGrafx 16",
+        ["Arcade"] = "Arcade Controller",
+        ["PC"] = "IBM - PC and Compatibles",
     };
 
-    private static string Commons(string file) => "commons:" + file;
-    private static string Wiki(string page) => "wiki:" + page;
+    private static readonly object Gate = new();
+    private static readonly Dictionary<string, (ImageSource img, bool alpha)> Loaded = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> InFlight = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> Failed = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Items que esperan una descarga en curso (la lista de sistemas se reconstruye al filtrar).</summary>
+    private static readonly Dictionary<string, List<WeakReference<SystemItem>>> Waiting = new(StringComparer.OrdinalIgnoreCase);
 
     private static HttpClient Create()
     {
         var c = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-        try { c.DefaultRequestHeaders.UserAgent.ParseAdd("RecompVault/1.0 (system logo cache)"); } catch { }
+        c.DefaultRequestHeaders.UserAgent.ParseAdd("RecompVault (system icons)");
         return c;
     }
 
     public static void Apply(SystemItem item)
     {
-        if (item.Name == "Todos") { item.HasLogo = false; return; }
-        // logo propio del usuario
-        foreach (var ext in new[] { ".png", ".webp", ".jpg" })
+        if (item.Name == "Todos") return;
+        lock (Gate)
+        {
+            if (Loaded.TryGetValue(item.Name, out var l)) { Set(item, l.img, l.alpha); return; }
+        }
+        // 1) propio del usuario
+        foreach (var ext in new[] { ".png", ".webp", ".jpg", ".jpeg" })
         {
             var custom = Path.Combine(CustomDir, Sanitize(item.Name) + ext);
-            if (File.Exists(custom)) { Set(item, Load(custom)); return; }
+            if (File.Exists(custom) && TryLoad(custom, out var ci, out var ca)) { Remember(item.Name, ci, ca); Set(item, ci, ca); return; }
         }
-        lock (Loaded)
+        // 2) caché
+        var cached = Path.Combine(CacheDir, Sanitize(item.Name) + ".png");
+        if (File.Exists(cached) && TryLoad(cached, out var img, out var alpha)) { Remember(item.Name, img, alpha); Set(item, img, alpha); return; }
+        // 3) descarga (una vez por sesión y sistema)
+        if (!Icons.TryGetValue(item.Name, out var file)) return;
+        lock (Gate)
         {
-            if (Loaded.TryGetValue(item.Name, out var cached)) { Set(item, cached); return; }
-            if (!LogoSources.ContainsKey(item.Name) || !Attempted.Add(item.Name))
-            {
-                var p = Path.Combine(CacheDir, Sanitize(item.Name) + ".png");
-                if (!File.Exists(p)) return;
-            }
+            if (Failed.Contains(item.Name)) return;
+            if (!Waiting.TryGetValue(item.Name, out var w)) Waiting[item.Name] = w = new();
+            w.Add(new WeakReference<SystemItem>(item));
+            if (!InFlight.Add(item.Name)) return;
         }
-        try
-        {
-            Directory.CreateDirectory(CacheDir);
-            var path = Path.Combine(CacheDir, Sanitize(item.Name) + ".png");
-            if (File.Exists(path))
-            {
-                var img = Load(path);
-                if (img != null) lock (Loaded) Loaded[item.Name] = img;
-                Set(item, img);
-                return;
-            }
-            // try download async in background, keep fallback badge meanwhile
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var url = await ResolveUrlAsync(item.Name);
-                    if (string.IsNullOrEmpty(url)) return;
-                    var bytes = await Http.GetByteArrayAsync(url);
-                    if (bytes == null || bytes.Length < 200 || !ImageLoader.LooksLikeImage(bytes)) return;
-                    await File.WriteAllBytesAsync(path, bytes);
-                    var img = Load(path);
-                    if (img != null) lock (Loaded) Loaded[item.Name] = img;
-                    Set(item, img);
-                }
-                catch { }
-            });
-        }
-        catch { }
-    }
-
-    private static async Task<string?> ResolveUrlAsync(string system)
-    {
-        if (!LogoSources.TryGetValue(system, out var sources)) return null;
-        foreach (var s in sources)
+        _ = Task.Run(async () =>
         {
             try
             {
-                if (s.StartsWith("commons:", StringComparison.Ordinal))
+                var bytes = await Http.GetByteArrayAsync(Base + Uri.EscapeDataString(file) + ".png");
+                if (!ImageLoader.LooksLikeImage(bytes)) throw new InvalidDataException("no es una imagen");
+                Directory.CreateDirectory(CacheDir);
+                await File.WriteAllBytesAsync(cached, bytes);
+                if (TryLoad(cached, out var dimg, out var dalpha))
                 {
-                    var file = s.Substring("commons:".Length);
-                    var url = $"https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/{Uri.EscapeDataString(file)}&width=640";
-                    using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-                    if (resp.IsSuccessStatusCode) return url;
-                }
-                else if (s.StartsWith("wiki:", StringComparison.Ordinal))
-                {
-                    var page = s.Substring("wiki:".Length);
-                    var json = await Http.GetStringAsync($"https://en.wikipedia.org/api/rest_v1/page/summary/{Uri.EscapeDataString(page)}");
-                    using var doc = JsonDocument.Parse(json);
-                    if (doc.RootElement.TryGetProperty("thumbnail", out var t) && t.TryGetProperty("source", out var src))
-                        return src.GetString();
+                    Remember(item.Name, dimg, dalpha);
+                    List<WeakReference<SystemItem>> targets;
+                    lock (Gate) { targets = Waiting.TryGetValue(item.Name, out var w) ? w.ToList() : new(); Waiting.Remove(item.Name); }
+                    foreach (var wr in targets) if (wr.TryGetTarget(out var t)) Set(t, dimg, dalpha);
                 }
             }
-            catch { }
-        }
-        return null;
+            catch (Exception ex)
+            {
+                lock (Gate) Failed.Add(item.Name);
+                Log.Warn($"Icono de sistema {item.Name}: {ex.Message}");
+            }
+            finally { lock (Gate) InFlight.Remove(item.Name); }
+        });
     }
 
-    private static ImageSource? Load(string path) => ImageLoader.Load(path, 480);
+    /// <summary>Se vuelve a aplicar a los SystemItem nuevos (la lista se reconstruye al filtrar).</summary>
+    private static void Remember(string name, ImageSource img, bool alpha) { lock (Gate) Loaded[name] = (img, alpha); }
 
-    private static void Set(SystemItem item, ImageSource? img)
+    private static bool TryLoad(string path, out ImageSource img, out bool alpha)
     {
-        if (img == null) return;
-        var alpha = SystemItem.HasAlpha(img);
-        UiThread.Run(() => { item.LogoImage = img; item.LogoHasAlpha = alpha; item.HasLogo = true; });
+        img = null!; alpha = false;
+        var b = ImageLoader.Load(path, 256);
+        if (b == null) return false;
+        img = b;
+        alpha = HasTransparency(b);
+        return true;
     }
+
+    /// <summary>¿Tiene píxeles transparentes de verdad? (el formato no basta: hay PNG opacos con canal alfa).</summary>
+    public static bool HasTransparency(BitmapSource src)
+    {
+        try
+        {
+            var conv = new FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
+            int w = conv.PixelWidth, h = conv.PixelHeight;
+            if (w == 0 || h == 0) return false;
+            var stride = w * 4;
+            var px = new byte[stride * h];
+            conv.CopyPixels(px, stride, 0);
+            int transparent = 0, total = w * h;
+            for (int i = 3; i < px.Length; i += 4) if (px[i] < 200) transparent++;
+            return transparent > total / 20; // más de un 5 %
+        }
+        catch { return false; }
+    }
+
+    private static void Set(SystemItem item, ImageSource img, bool alpha) =>
+        UiThread.Run(() => { item.LogoImage = img; item.LogoHasAlpha = alpha; item.HasLogo = true; });
 
     private static string Sanitize(string s)
     {

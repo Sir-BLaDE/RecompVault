@@ -119,6 +119,19 @@ public partial class DetectionDialog : Window
             (detectedApp != null ? $"  →  {detectedApp.Name} [{detectedApp.FolderName}]" : "") +
             (_lib == null ? "   ·   Quiver no detectado (botón Q Quiver)" : $"   ·   {_lib.Apps.Count} apps en Quiver");
 
+        // sugerencia aproximada (no se aplica sola)
+        if (_lib != null && string.IsNullOrWhiteSpace(_g.Repository))
+        {
+            var taken = new HashSet<QuiverApp>();
+            var sug = QuiverMatcher.Suggest(_lib, _g.FolderPath, _g.Name, taken);
+            if (sug?.App != null)
+            {
+                _suggested = sug.App;
+                SuggestText.Text = $"Sugerencia: {sug.App.Name} — {sug.App.Repository}  ({sug.Kind.Replace("Quiver: ", "")})";
+                SuggestPanel.Visibility = Visibility.Visible;
+            }
+        }
+
         RepoBox.Text = _g.Repository ?? "";
         ProviderBox.SelectedIndex = string.Equals(_g.Provider, "gitlab", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         FilterBox.Text = _g.AssetFilter ?? "";
@@ -183,6 +196,15 @@ public partial class DetectionDialog : Window
         {
             RepoBox.Text = ""; FilterBox.Text = "";
         }
+    }
+
+    private QuiverApp? _suggested;
+
+    private void UseSuggestion_Click(object sender, RoutedEventArgs e)
+    {
+        if (_suggested == null) return;
+        QuiverFilterBox.Text = "";
+        QuiverBox.SelectedItem = _quiverOptions.FirstOrDefault(o => ReferenceEquals(o.App, _suggested));
     }
 
     private void BrowseExe_Click(object sender, RoutedEventArgs e)

@@ -32,7 +32,7 @@
 
         <!-- Tile de sistema del carrusel -->
         <Style x:Key="SystemTile" TargetType="ListBoxItem">
-            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Margin" Value="0,10,12,14"/>
             <Setter Property="Template">
@@ -59,21 +59,23 @@
                                             </LinearGradientBrush>
                                         </Border.Background>
                                     </Border>
-                                    <!-- logo en blanco (silueta) -->
-                                    <Rectangle Fill="White" Margin="20,14,20,26" OpacityMask="{Binding LogoBrush}"
-                                               Visibility="{Binding ShowSilhouette, Converter={StaticResource BoolToVis}}"/>
-                                    <Image Source="{Binding LogoImage}" Stretch="Uniform" Margin="20,14,20,26"
-                                           Visibility="{Binding ShowColorLogo, Converter={StaticResource BoolToVis}}"/>
-                                    <!-- sin logo: siglas -->
-                                    <TextBlock Text="{Binding Icon}" Foreground="White" FontSize="30" FontWeight="Black" FontStyle="Italic"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,10"
-                                               Visibility="{Binding ShowBadge, Converter={StaticResource BoolToVis}}"/>
-                                    <TextBlock Text="{Binding FullName}" Foreground="#CCFFFFFF" FontSize="9.5" FontWeight="SemiBold"
-                                               HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10,0,0,7" TextTrimming="CharacterEllipsis" MaxWidth="110"/>
-                                    <Border Background="#66000000" CornerRadius="8" Padding="7,1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,8,6">
+                                    <!-- icono del sistema en blanco -->
+                                    <Grid Height="44" Margin="16,10,16,0" VerticalAlignment="Top">
+                                        <Rectangle Fill="White" OpacityMask="{Binding LogoBrush}"
+                                                   Visibility="{Binding ShowSilhouette, Converter={StaticResource BoolToVis}}"/>
+                                        <Image Source="{Binding LogoImage}" Stretch="Uniform"
+                                               Visibility="{Binding ShowColorLogo, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBlock Text="{Binding Icon}" Foreground="White" FontSize="26" FontWeight="Black" FontStyle="Italic"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Visibility="{Binding ShowBadge, Converter={StaticResource BoolToVis}}"/>
+                                    </Grid>
+                                    <!-- nombre -->
+                                    <TextBlock Text="{Binding FullName}" Foreground="White" FontSize="11" FontWeight="Bold" TextAlignment="Center"
+                                               HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="8,0,8,9" TextTrimming="CharacterEllipsis"/>
+                                    <Border Background="#66000000" CornerRadius="8" Padding="6,0" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,6,0">
                                         <TextBlock Text="{Binding Count}" Foreground="White" FontSize="10" FontWeight="Bold"/>
                                     </Border>
-                                    <Ellipse Width="9" Height="9" Fill="{StaticResource WarnBrush}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,8,0"
+                                    <Ellipse Width="9" Height="9" Fill="{StaticResource WarnBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8,8,0,0"
                                              ToolTip="Hay actualizaciones">
                                         <Ellipse.Style>
                                             <Style TargetType="Ellipse">
@@ -221,11 +223,43 @@
                                 </Border.Background>
                                 <TextBlock Text="{Binding SystemShort}" Foreground="White" FontSize="10" FontWeight="Black"/>
                             </Border>
-                            <!-- favorito -->
-                            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,9,10,0" Background="#AA000000" CornerRadius="10" Padding="6,0"
-                                    Visibility="{Binding Favorite, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="★" Foreground="#FFD54F" FontSize="15"/>
-                            </Border>
+                            <!-- favorito (clic para marcar/desmarcar) -->
+                            <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,8,0" Cursor="Hand" ToolTip="Favorito"
+                                    Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bg" Background="#88000000" CornerRadius="10" Padding="6,0">
+                                            <TextBlock x:Name="Star" Text="☆" Foreground="#CCFFFFFF" FontSize="15"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding Favorite}" Value="True">
+                                                <Setter TargetName="Star" Property="Text" Value="★"/>
+                                                <Setter TargetName="Star" Property="Foreground" Value="#FFD54F"/>
+                                            </DataTrigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bg" Property="Background" Value="#CC000000"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                            <!-- deshacer disponible -->
+                            <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,40,8,0" Cursor="Hand" ToolTip="Deshacer la última actualización"
+                                    Visibility="{Binding HasUndo, Converter={StaticResource BoolToVis}}"
+                                    Command="{Binding DataContext.UndoUpdateCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bg" Background="#88000000" CornerRadius="10" Padding="7,1">
+                                            <TextBlock Text="↶" Foreground="White" FontSize="14" FontWeight="Bold"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bg" Property="Background" Value="#CC000000"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
                             <!-- oculto -->
                             <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,40,0,0" Background="#CCB02020" CornerRadius="8" Padding="8,3"
                                     Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}">
@@ -283,23 +317,26 @@
                         <TextBlock Text="{Binding PlayInfo}" Foreground="{StaticResource Accent2Brush}" FontSize="10.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
 
-                    <!-- acciones -->
-                    <DockPanel Grid.Row="2" Margin="10,4,10,10" LastChildFill="True">
-                        <Button DockPanel.Dock="Right" Content="⋯" Style="{StaticResource GhostButton}" Padding="9,5" Margin="4,0,0,0" ToolTip="Más opciones" Click="More_Click"/>
-                        <Button DockPanel.Dock="Right" Content="★" Style="{StaticResource GhostButton}" Padding="8,5" Margin="4,0,0,0" ToolTip="Favorito"
-                                Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                        <Button DockPanel.Dock="Right" Content="ℹ" Style="{StaticResource GhostButton}" Padding="8,5" Margin="4,0,0,0"
-                                ToolTip="Detección: nombre, ejecutable, app de Quiver, repositorio, versiones"
-                                Command="{Binding DataContext.ShowDetectionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                        <Button DockPanel.Dock="Right" Content="↶" Style="{StaticResource GhostButton}" Padding="8,5" Margin="4,0,0,0" ToolTip="Deshacer la última actualización"
-                                Visibility="{Binding HasUndo, Converter={StaticResource BoolToVis}}"
-                                Command="{Binding DataContext.UndoUpdateCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                        <Button DockPanel.Dock="Right" Content="⟳" Style="{StaticResource GhostButton}" Padding="8,5" Margin="4,0,0,0" ToolTip="Actualizar (notas del release antes de instalar)"
-                                Command="{Binding DataContext.UpdateGameCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                        <Button Content="▶ Jugar" Style="{StaticResource PrimaryButton}" Padding="10,6"
+                    <!-- acciones: Jugar siempre visible y ancho; el resto, iconos de tamaño fijo -->
+                    <Grid Grid.Row="2" Margin="10,4,10,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Content="▶ Jugar" Style="{StaticResource PrimaryButton}" Padding="6,6" MinWidth="76"
                                 Command="{Binding DataContext.LaunchCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}" IsEnabled="{Binding CanLaunch}"/>
-                    </DockPanel>
+                        <Button Grid.Column="1" Content="⟳" Style="{StaticResource GhostButton}" Width="30" Height="30" Padding="0" Margin="5,0,0,0"
+                                ToolTip="Actualizar (notas del release antes de instalar)"
+                                Command="{Binding DataContext.UpdateGameCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                        <Button Grid.Column="2" Content="ℹ" Style="{StaticResource GhostButton}" Width="30" Height="30" Padding="0" Margin="5,0,0,0"
+                                ToolTip="Detección: nombre, ejecutable, app de Quiver, repositorio, versiones"
+                                Command="{Binding DataContext.ShowDetectionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                        <Button Grid.Column="3" Content="⋯" Style="{StaticResource GhostButton}" Width="30" Height="30" Padding="0" Margin="5,0,0,0"
+                                ToolTip="Más opciones (favorito, deshacer, portada, Steam...)" Click="More_Click"/>
+                    </Grid>
                 </Grid>
             </Border>
         </DataTemplate>
@@ -409,7 +446,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <!-- logo grande -->
-                <Grid Width="250" Height="84" VerticalAlignment="Center" Margin="0,0,28,0">
+                <Grid Width="110" Height="84" VerticalAlignment="Center" Margin="0,0,24,0">
                     <Rectangle Fill="White" OpacityMask="{Binding HeroSystem.LogoBrush}"
                                Visibility="{Binding HeroSystem.ShowSilhouette, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
                         <Rectangle.Effect>

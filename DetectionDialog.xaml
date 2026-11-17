@@ -100,6 +100,10 @@
                         <TextBox x:Name="QuiverFilterBox" Padding="8,4" Margin="0,0,0,4" ToolTip="Escribe para filtrar la lista de apps de Quiver"/>
                         <ComboBox x:Name="QuiverBox" DisplayMemberPath="Display" MaxDropDownHeight="420" SelectionChanged="QuiverBox_SelectionChanged"/>
                         <TextBlock x:Name="LinkSourceText" Style="{StaticResource Source}"/>
+                        <DockPanel x:Name="SuggestPanel" Visibility="Collapsed" Margin="0,-4,0,10">
+                            <Button DockPanel.Dock="Right" Content="Usar sugerencia" Style="{StaticResource GhostButton}" Padding="10,3" Margin="8,0,0,0" Click="UseSuggestion_Click"/>
+                            <TextBlock x:Name="SuggestText" Foreground="{StaticResource WarnBrush}" FontSize="11.5" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        </DockPanel>
                     </StackPanel>
 
                     <TextBlock Grid.Row="6" Text="Repositorio" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,6,12,0"/>

@@ -17,11 +17,10 @@ public sealed record QuiverMatch(QuiverApp? App, QuiverCatalogEntry? Catalog, st
 /// </summary>
 public static class QuiverMatcher
 {
-    private const int AppThreshold = 120;
-    private const int CatalogThreshold = 110;
+    private const int AppThreshold = 150;
 
     /// <summary>Margen mínimo sobre el segundo candidato para aceptar una coincidencia difusa.</summary>
-    private const int AmbiguityMargin = 25;
+    private const int AmbiguityMargin = 40;
 
     /// <summary>Solo coincidencias seguras: ruta, nombre de carpeta exacto o normalizado.</summary>
     public static QuiverMatch? MatchExact(QuiverLibrary lib, string folderPath)
@@ -30,7 +29,8 @@ public static class QuiverMatcher
         var app = lib.AppByPath(folderPath);
         if (app != null) return new QuiverMatch(app, lib.CatalogFor(app), "Quiver: ruta de instalación exacta");
         // instalada en una subcarpeta de esta carpeta (Juego\Juego-v1.0\...)
-        app = lib.Apps.FirstOrDefault(a => a.InstallPath.Length > 0 && PathUtil.IsSameOrInside(a.InstallPath, folderPath));
+        app = lib.Apps.FirstOrDefault(a => a.InstallPath.Length > 0 && PathUtil.IsSameOrInside(a.InstallPath, folderPath) &&
+                                           PathUtil.Norm(a.InstallPath).Count(ch => ch == '\\') - PathUtil.Norm(folderPath).Count(ch => ch == '\\') is > 0 and <= 2);
         if (app != null) return new QuiverMatch(app, lib.CatalogFor(app), "Quiver: instalada en una subcarpeta");
         app = lib.AppByFolderName(folderName) ?? lib.AppByNormName(PathUtil.NormName(folderName));
         if (app != null) return new QuiverMatch(app, lib.CatalogFor(app), "Quiver: mismo nombre de carpeta");
@@ -38,30 +38,19 @@ public static class QuiverMatcher
         return cat != null ? new QuiverMatch(null, cat, "Catálogo de Quiver: mismo nombre de carpeta") : null;
     }
 
-    /// <param name="taken">Apps ya asignadas a otra carpeta: no se reutilizan en coincidencias difusas.</param>
-    public static QuiverMatch? Match(QuiverLibrary lib, string folderPath, string gameName, ISet<QuiverApp>? taken = null)
+    /// <summary>Exacta y, si se permite, aproximada (con pruebas fuertes y margen claro).</summary>
+    /// <param name="taken">Apps ya asignadas a otra carpeta: no se reutilizan en coincidencias aproximadas.</param>
+    public static QuiverMatch? Match(QuiverLibrary lib, string folderPath, string gameName, ISet<QuiverApp>? taken = null, bool allowFuzzy = true)
+        => MatchExact(lib, folderPath) ?? (allowFuzzy ? Suggest(lib, folderPath, gameName, taken) : null);
+
+    /// <summary>
+    /// Mejor candidato aproximado entre las apps de Quiver, o null. Solo se acepta si hay una prueba fuerte
+    /// (el nombre del repositorio aparece en los ejecutables, la URL del repositorio en un README/txt, o el nombre
+    /// de carpeta coincide de verdad), supera el umbral y saca margen al segundo.
+    /// </summary>
+    public static QuiverMatch? Suggest(QuiverLibrary lib, string folderPath, string gameName, ISet<QuiverApp>? taken = null)
     {
         var folderName = Path.GetFileName(folderPath.TrimEnd('\\', '/'));
-
-        // 1) exactos
-        var app = lib.AppByPath(folderPath)
-                  ?? lib.AppByFolderName(folderName)
-                  ?? lib.AppByNormName(PathUtil.NormName(folderName));
-        if (app == null)
-        {
-            // carpeta dentro de un installPath de Quiver o al revés (con límite de separador)
-            foreach (var a in lib.Apps)
-            {
-                if (a.InstallPath.Length == 0) continue;
-                if (PathUtil.IsSameOrInside(folderPath, a.InstallPath) || PathUtil.IsSameOrInside(a.InstallPath, folderPath)) { app = a; break; }
-            }
-        }
-        if (app != null) return new QuiverMatch(app, lib.CatalogFor(app), "Quiver: coincidencia exacta");
-
-        var cat = lib.CatalogByFolderName(folderName) ?? lib.CatalogByNormName(PathUtil.NormName(folderName));
-        if (cat != null) return new QuiverMatch(null, cat, "Catálogo de Quiver: mismo nombre de carpeta");
-
-        // 2) por puntuación
         var hints = Hints(folderPath);
         QuiverApp? bestApp = null; int bestAppScore = 0, secondApp = 0;
         foreach (var c in lib.Apps)
@@ -69,23 +58,34 @@ public static class QuiverMatcher
             if (taken != null && taken.Contains(c)) continue;
             // la carpeta instalada de esta app existe y es otra: no puede ser esta
             if (c.InstallPath.Length > 0 && Directory.Exists(c.InstallPath) && !PathUtil.IsSameOrInside(folderPath, c.InstallPath)) continue;
+            if (!StrongEvidence(folderName, hints, c)) continue;
             int s = Score(folderName, gameName, hints, c.FolderName, c.Name, c.Project, c.Repository, isApp: true);
-            if (s > bestAppScore) { secondApp = bestAppScore; bestAppScore = s; bestApp = c; }
+            if (s > bestAppScore) { if (bestApp == null || c.Repository != bestApp.Repository) secondApp = bestAppScore; bestAppScore = s; bestApp = c; }
             else if (s > secondApp && (bestApp == null || c.Repository != bestApp.Repository)) secondApp = s;
         }
         if (bestApp != null && bestAppScore >= AppThreshold && bestAppScore - secondApp >= AmbiguityMargin)
             return new QuiverMatch(bestApp, lib.CatalogFor(bestApp), $"Quiver: coincidencia aproximada (puntuación {bestAppScore}, siguiente {secondApp})");
-
-        QuiverCatalogEntry? bestCat = null; int bestCatScore = 0, secondCat = 0;
-        foreach (var c in lib.Catalog)
-        {
-            int s = Score(folderName, gameName, hints, c.FolderName, c.Slug.Replace('-', ' ').Replace('_', ' '), "", c.Repository, isApp: false);
-            if (s > bestCatScore) { secondCat = bestCatScore; bestCatScore = s; bestCat = c; }
-            else if (s > secondCat && (bestCat == null || c.Repository != bestCat.Repository)) secondCat = s;
-        }
-        if (bestCat != null && bestCatScore >= CatalogThreshold && bestCatScore - secondCat >= AmbiguityMargin)
-            return new QuiverMatch(null, bestCat, $"Catálogo de Quiver: coincidencia aproximada (puntuación {bestCatScore})");
         return null;
+    }
+
+    /// <summary>Pruebas que no dependen de palabras sueltas ("super", "mario"...).</summary>
+    private static bool StrongEvidence(string folderName, FolderHints hints, QuiverApp c)
+    {
+        var folderNorm = PathUtil.NormName(folderName);
+        foreach (var cand in new[] { c.FolderName, c.Name, c.Project })
+        {
+            var n = PathUtil.NormName(cand);
+            if (n.Length >= 6 && folderNorm.Length >= 6 && (folderNorm == n || folderNorm.StartsWith(n) || n.StartsWith(folderNorm))) return true;
+        }
+        if (!string.IsNullOrWhiteSpace(c.Repository))
+        {
+            var parts = c.Repository.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var repoNorm = PathUtil.NormName(parts.Length > 0 ? parts[^1] : c.Repository);
+            if (repoNorm.Length >= 5 && (hints.Norms.Contains(repoNorm) || hints.ExeBlobNorm.Contains(repoNorm))) return true;
+            var lower = c.Repository.Trim('/').ToLowerInvariant();
+            if (hints.TextBlob.Contains("github.com/" + lower) || hints.TextBlob.Contains("gitlab.com/" + lower)) return true;
+        }
+        return false;
     }
 
     // ------------------------------------------------------------------ pistas de carpeta (cacheadas)

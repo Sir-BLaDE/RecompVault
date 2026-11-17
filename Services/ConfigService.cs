@@ -26,6 +26,11 @@ public class AppConfig
     public bool QuiverSyncEnabled { get; set; } = true;
     /// <summary>Muestra también las apps instaladas por Quiver que no están dentro de la carpeta raíz.</summary>
     public bool IncludeQuiverAppsOutsideRoot { get; set; } = true;
+    /// <summary>
+    /// Vincular automáticamente por coincidencia aproximada. Desactivado por defecto: solo se vincula por ruta
+    /// o nombre de carpeta exactos; las aproximadas se muestran como sugerencia en ℹ.
+    /// </summary>
+    public bool FuzzyQuiverMatching { get; set; } = false;
     public bool AutoUpdateRecomps { get; set; } = false;
     public bool AutoCheckUpdates { get; set; } = true;
     /// <summary>Horas mínimas entre consultas automáticas a GitHub/GitLab para el mismo repositorio.</summary>

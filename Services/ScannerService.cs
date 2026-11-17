@@ -113,7 +113,7 @@ public static class ScannerService
                 if (m != null) { QuiverService.Enrich(g, m, cfg); if (m.App != null) taken.Add(m.App); }
                 else pending.Add(g);
             }
-            foreach (var g in pending)
+            foreach (var g in cfg.FuzzyQuiverMatching ? pending : new List<GameEntry>())
             {
                 var m = QuiverMatcher.Match(quiver, g.FolderPath, g.Name, taken);
                 if (m == null) continue;

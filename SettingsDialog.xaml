@@ -56,6 +56,7 @@
                 </DockPanel>
                 <TextBlock x:Name="QuiverHint" Text="Vacío = detectar automáticamente." Style="{StaticResource Hint}"/>
                 <CheckBox x:Name="ExternalBox" Content="Mostrar también las apps de Quiver instaladas fuera de la carpeta raíz"/>
+                <CheckBox x:Name="FuzzyBox" Content="Vincular también por coincidencia aproximada (puede equivocarse; si no, aparecen como sugerencia en ℹ)"/>
 
                 <TextBlock Text="ACTUALIZACIONES" Style="{StaticResource Sec}"/>
                 <CheckBox x:Name="AutoCheckBox" Content="Comprobar actualizaciones al arrancar"/>

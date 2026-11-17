@@ -32,6 +32,7 @@ public partial class SettingsDialog : Window
             QuiverEnabledBox.IsChecked = cfg.QuiverSyncEnabled;
             QuiverBox.Text = cfg.QuiverPath;
             ExternalBox.IsChecked = cfg.IncludeQuiverAppsOutsideRoot;
+            FuzzyBox.IsChecked = cfg.FuzzyQuiverMatching;
             AutoCheckBox.IsChecked = cfg.AutoCheckUpdates;
             AutoUpdateBox.IsChecked = cfg.AutoUpdateRecomps;
             PreBox.IsChecked = cfg.IncludePrereleases;
@@ -100,11 +101,13 @@ public partial class SettingsDialog : Window
             NeedsRescan = !string.Equals(c.RootPath, root, StringComparison.OrdinalIgnoreCase) ||
                           !string.Equals(c.QuiverPath, quiver, StringComparison.OrdinalIgnoreCase) ||
                           c.QuiverSyncEnabled != (QuiverEnabledBox.IsChecked == true) ||
-                          c.IncludeQuiverAppsOutsideRoot != (ExternalBox.IsChecked == true);
+                          c.IncludeQuiverAppsOutsideRoot != (ExternalBox.IsChecked == true) ||
+                          c.FuzzyQuiverMatching != (FuzzyBox.IsChecked == true);
             c.RootPath = root;
             c.QuiverPath = QuiverLibrary.ResolveRoot(quiver) ?? quiver;
             c.QuiverSyncEnabled = QuiverEnabledBox.IsChecked == true;
             c.IncludeQuiverAppsOutsideRoot = ExternalBox.IsChecked == true;
+            c.FuzzyQuiverMatching = FuzzyBox.IsChecked == true;
             c.AutoCheckUpdates = AutoCheckBox.IsChecked == true;
             c.AutoUpdateRecomps = AutoUpdateBox.IsChecked == true;
             c.IncludePrereleases = PreBox.IsChecked == true;

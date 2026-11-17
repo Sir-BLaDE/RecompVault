@@ -440,7 +440,7 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 var taken = lib.Apps.Where(a => others.Contains(a.FolderName)).ToHashSet();
                 var exact = QuiverMatcher.MatchExact(lib, g.FolderPath);
-                var m = exact ?? QuiverMatcher.Match(lib, g.FolderPath, auto.name, taken);
+                var m = exact ?? (Config.FuzzyQuiverMatching ? QuiverMatcher.Suggest(lib, g.FolderPath, auto.name, taken) : null);
                 if (m != null) QuiverService.Enrich(probe, m, Config, allowRename: exact != null || !auto.fromMap);
             }
             QuiverService.ApplyLinkOverride(probe, lib, Config);
