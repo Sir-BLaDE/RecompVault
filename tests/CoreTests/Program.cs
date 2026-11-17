@@ -126,6 +126,26 @@ try
 }
 finally { try { Directory.Delete(exeDir, true); } catch { } }
 
+// ---------------------------------------------------------------- Steam y sistemas
+Check("crc32 conocido", SteamShortcuts.Crc32(System.Text.Encoding.ASCII.GetBytes("123456789")) == 0xCBF43926);
+var (vdf1, id1, upd1) = SteamShortcuts.AddOrUpdate(null, "Zelda 64", @"D:\J\z.exe", @"D:\J", @"D:\J\z.exe", "", new[] { "RecompVault", "N64" });
+Check("appid con bit alto", (id1 & 0x80000000) != 0 && !upd1);
+var parsed = BinaryVdf.Read(vdf1);
+var sc = parsed.Get("shortcuts") as VdfNode;
+Check("vdf ida y vuelta", sc != null && (sc.Get("0") as VdfNode)?.Get("AppName") as string == "Zelda 64");
+var (vdf2, id2, upd2) = SteamShortcuts.AddOrUpdate(vdf1, "Banjo", @"D:\J\b.exe", @"D:\J", "", "-x", Array.Empty<string>());
+var (vdf3, _, upd3) = SteamShortcuts.AddOrUpdate(vdf2, "Zelda 64", @"D:\J\z.exe", @"D:\J", "", "", Array.Empty<string>());
+var sc3 = BinaryVdf.Read(vdf3).Get("shortcuts") as VdfNode;
+Check("segundo acceso en índice 1", sc3?.Order.Count == 2 && (sc3.Get("1") as VdfNode)?.Get("LaunchOptions") as string == "-x");
+Check("mismo exe actualiza, no duplica", upd3 && !upd2);
+Check("bytes idénticos tras releer y reescribir", BinaryVdf.Write(BinaryVdf.Read(vdf3)).SequenceEqual(vdf3));
+Check("mapper N64", SystemMapper.Suggest(new[] { "Nintendo 64" }) == "N64");
+Check("mapper PS2 vs PS", SystemMapper.Suggest(new[] { "PlayStation 2" }) == "PS2" && SystemMapper.Suggest(new[] { "PlayStation" }) == "PSX");
+Check("mapper Switch 2", SystemMapper.Suggest(new[] { "Nintendo Switch 2" }) == "SWITCH 2");
+Check("mapper Xbox 360", SystemMapper.Suggest(new[] { "Xbox 360" }) == "X360" && SystemMapper.Suggest(new[] { "Xbox" }) == "XBOX");
+Check("mapper respeta carpeta existente", SystemMapper.Suggest(new[] { "Sega Genesis" }, new[] { "MegaDrive" }) == "MegaDrive");
+Check("mapper desconocido", SystemMapper.Suggest(new[] { "Virtual Boy" }) == null);
+
 // ---------------------------------------------------------------- ficheros protegidos
 Check("glob *.ini en subcarpeta", GlobMatcher.IsMatch(@"cfg\game.ini", "*.ini"));
 Check("glob carpeta/**", GlobMatcher.IsMatch("saves/slot1/a.bin", "saves/**") && GlobMatcher.IsMatch(@"Saves\x.dat", "saves/**"));

@@ -4,6 +4,35 @@ Launcher para Windows (WPF, .NET 10) de recomps, decomps y ports. Se integra con
 [Quiver Launcher](https://github.com/tgeorgiadis/quiver-launcher) para sacar de ahí los
 nombres, los iconos, los repositorios y las actualizaciones.
 
+## Interfaz
+
+Estilo frontend de emulación: carrusel de sistemas con sus colores de marca y el logo en blanco,
+cabecera del sistema elegido (logo grande, fabricante, año, número de juegos y actualizaciones) y
+cuadrícula de portadas virtualizada (solo se dibuja lo visible, así va fluido con cientos de juegos).
+
+- **Teclado:** flechas para moverse, Intro para jugar, RePág/AvPág para cambiar de sistema, Ctrl+F para buscar y F11 para el modo sofá.
+- **Mando XInput:** cruceta o stick para moverse, A jugar, Y favorito, X detección, LB/RB sistema, B limpiar la búsqueda y Start para el modo sofá. Solo responde con RecompVault en primer plano.
+- **Modo sofá:** pantalla completa ampliada y con la interfaz simplificada.
+- **Logos propios:** pon `<SISTEMA>.png` en `%APPDATA%\RecompVault\system_logos_custom` (mejor con fondo transparente, para que se pinte en blanco).
+
+## Explorar Quiver (✦)
+
+Muestra el catálogo público de quiverlauncher.com, el mismo de la pestaña Explorar de Quiver.
+Se puede ordenar por actualizados, nuevos, mejor valorados o nombre, buscar, filtrar por consola y
+ocultar lo que ya tienes. Cada app enseña su arte, versiones (última y verificada), descripción y si
+ya la tienes instalada. **Instalar** propone el sistema y la carpeta, deja elegir versión y paquete, e
+instala con copia de deshacer y vínculo para futuras actualizaciones.
+
+## Más
+
+- **Tiempo de juego:** se mide mientras el juego está abierto. El "último jugado" se comparte con Quiver a través de `LastPlayed.txt`.
+- **Argumentos de lanzamiento y ejecutar como administrador:** por juego, en ℹ.
+- **Acceso directo en el escritorio** y **Añadir a Steam** como juego no-Steam, con la portada en la biblioteca. Steam tiene que estar cerrado; se guarda una copia de `shortcuts.vdf`.
+- **Revisar detección (🔍):** tabla con todos los juegos y sus avisos (vínculo aproximado, sin vincular, versión desconocida, actualizados por la versión antigua...). Permite confirmar o desvincular en bloque y exportar a CSV.
+- **Ficheros protegidos:** patrones globales (Ajustes) y por juego (ℹ) que nunca se sobrescriben al actualizar.
+- **Ajustes (⚙)** en una sola ventana. **Copias de deshacer (↶)** con espacio ocupado y borrado.
+- **Releases propios:** al etiquetar `vX.Y.Z` se publica el exe, y RecompVault avisa cuando hay una versión más nueva.
+
 ## Estructura esperada
 
 ```

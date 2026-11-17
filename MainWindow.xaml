@@ -40,7 +40,7 @@
                     <ControlTemplate TargetType="ListBoxItem">
                         <Grid x:Name="Root" Width="164" Height="92" RenderTransformOrigin="0.5,0.5" Opacity="0.72">
                             <Grid.RenderTransform>
-                                <ScaleTransform x:Name="Scale" ScaleX="1" ScaleY="1"/>
+                                <ScaleTransform ScaleX="1" ScaleY="1"/>
                             </Grid.RenderTransform>
                             <Border x:Name="Tile" CornerRadius="14" BorderThickness="2" BorderBrush="#22FFFFFF">
                                 <Border.Background>
@@ -95,8 +95,11 @@
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Root" Property="Opacity" Value="1"/>
                                 <Setter TargetName="Tile" Property="BorderBrush" Value="White"/>
-                                <Setter TargetName="Scale" Property="ScaleX" Value="1.07"/>
-                                <Setter TargetName="Scale" Property="ScaleY" Value="1.07"/>
+                                <Setter TargetName="Root" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.07" ScaleY="1.07"/>
+                                    </Setter.Value>
+                                </Setter>
                                 <Setter TargetName="Tile" Property="Effect">
                                     <Setter.Value>
                                         <DropShadowEffect BlurRadius="22" ShadowDepth="0" Opacity="0.55" Color="Black"/>
@@ -358,6 +361,9 @@
 
             <!-- herramientas -->
             <WrapPanel Grid.Column="2" VerticalAlignment="Center" Visibility="{Binding IsDeskMode, Converter={StaticResource BoolToVis}}">
+                <Button Content="{Binding SelfUpdateLabel}" Style="{StaticResource ToolButton}" Command="{Binding OpenSelfUpdateCommand}"
+                        Visibility="{Binding HasSelfUpdate, Converter={StaticResource BoolToVis}}" Foreground="{StaticResource WarnBrush}"
+                        ToolTip="Hay una versión nueva de RecompVault: abre la página de descarga"/>
                 <Button Content="✦ Explorar" Style="{StaticResource ToolButton}" Command="{Binding ExploreCommand}" ToolTip="Novedades del catálogo de Quiver: apps nuevas y actualizadas, con instalación directa"/>
                 <Button Content="{Binding UpdatesLabel}" Style="{StaticResource ToolButton}" Command="{Binding CheckUpdatesCommand}" ToolTip="Buscar actualizaciones"/>
                 <Button Content="{Binding AutoUpdateLabel}" Style="{StaticResource ToolButton}" Command="{Binding ToggleAutoUpdateCommand}" ToolTip="Auto-actualizar (solo vínculos seguros)"/>

@@ -208,6 +208,16 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand InstallVersionCommand { get; }
     public ICommand RepairCommand { get; }
     public ICommand CancelUpdateCommand { get; }
+    public ICommand ExploreCommand { get; }
+    public ICommand DesktopShortcutCommand { get; }
+    public ICommand AddToSteamCommand { get; }
+    public ICommand OpenSelfUpdateCommand { get; }
+
+    private string? _selfUpdateUrl;
+    private string _selfUpdateLabel = "";
+    /// <summary>Texto del aviso de versión nueva de RecompVault (vacío = no hay).</summary>
+    public string SelfUpdateLabel { get => _selfUpdateLabel; set { _selfUpdateLabel = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelfUpdate)); } }
+    public bool HasSelfUpdate => !string.IsNullOrEmpty(SelfUpdateLabel);
     public ICommand UndoManagerCommand { get; }
     public ICommand SettingsCommand { get; }
     public ICommand ReviewDetectionCommand { get; }
@@ -250,6 +260,20 @@ public class MainViewModel : INotifyPropertyChanged
         RepairCommand = new RelayCommand(o => { if (o is GameEntry g) Repair(g); }, o => o is GameEntry g && !g.IsUpdating);
         ReviewDetectionCommand = new RelayCommand(_ => ReviewDetection());
         CancelUpdateCommand = new RelayCommand(o => { if (o is GameEntry g) CancelUpdate(g); });
+        ExploreCommand = new RelayCommand(_ =>
+        {
+            var open = System.Windows.Application.Current.Windows.OfType<ExploreDialog>().FirstOrDefault();
+            if (open != null) { open.Activate(); return; }
+            new ExploreDialog(this) { Owner = System.Windows.Application.Current.MainWindow }.Show();
+        });
+        DesktopShortcutCommand = new RelayCommand(o =>
+        {
+            if (o is not GameEntry g) return;
+            var err = IntegrationService.CreateDesktopShortcut(g, Config);
+            Status = err == null ? $"Acceso directo creado en el escritorio: {g.Name}" : $"No se pudo crear el acceso directo: {err}";
+        });
+        AddToSteamCommand = new RelayCommand(o => { if (o is GameEntry g) AddToSteam(g); });
+        OpenSelfUpdateCommand = new RelayCommand(_ => { if (_selfUpdateUrl != null) LauncherService.OpenUrl(_selfUpdateUrl); });
         UndoManagerCommand = new RelayCommand(_ => { var d = new UndoManagerDialog(this) { Owner = ActiveOwner() }; d.ShowDialog(); });
         SettingsCommand = new RelayCommand(_ => OpenSettings());
         RescanCommand = new RelayCommand(_ => Rescan());
@@ -275,6 +299,62 @@ public class MainViewModel : INotifyPropertyChanged
     {
         var app = System.Windows.Application.Current;
         return app?.Windows.OfType<System.Windows.Window>().FirstOrDefault(w => w.IsActive && w.IsVisible) ?? app?.MainWindow;
+    }
+
+    private void AddToSteam(GameEntry g)
+    {
+        if (IntegrationService.SteamPath() == null) { DialogService.Info("Steam", "No se ha encontrado Steam en este equipo."); return; }
+        var users = IntegrationService.SteamUsers();
+        if (users.Count == 0) { DialogService.Info("Steam", "No hay ningún usuario de Steam con carpeta de datos. Inicia sesión en Steam una vez."); return; }
+        if (IntegrationService.SteamRunning() &&
+            !DialogService.Confirm("Steam está abierto", "Steam sobrescribe sus accesos al cerrarse. Cierra Steam por completo antes de continuar.\n\n¿Ya lo has cerrado?", "Continuar", "Cancelar"))
+            return;
+        var user = users[0];
+        if (users.Count > 1)
+        {
+            var list = string.Join("\n", users.Select((u, i) => $"{i + 1}. {u.Name} ({u.Id})"));
+            var pick = DialogService.Prompt("Usuario de Steam", $"¿En qué usuario lo añado?\n{list}", "1", "Añadir");
+            if (pick == null) return;
+            if (!int.TryParse(pick.Trim(), out var n) || n < 1 || n > users.Count) { Status = "Usuario de Steam no válido."; return; }
+            user = users[n - 1];
+        }
+        var err = IntegrationService.AddToSteam(g, Config, user);
+        Status = err == null ? $"Añadido a Steam ({user.Name}): {g.Name}. Abre Steam para verlo en la biblioteca." : $"No se pudo añadir a Steam: {err}";
+        if (err != null) DialogService.Info("Steam", err);
+    }
+
+    /// <summary>Instala una app del catálogo de Quiver en una carpeta nueva y la vincula.</summary>
+    public void InstallFromCatalog(GameEntry temp, UpdateService.InstallChoice choice, bool pin)
+    {
+        temp.IsUpdating = true;
+        var cts = BeginUpdateCts(temp);
+        Status = $"Instalando {temp.Name} {choice.Version}...";
+        Task.Run(async () =>
+        {
+            var res = await UpdateService.UpdateAsync(temp, Config, new Progress<string>(s => UiThread.Run(() => Status = s)), cts.Token, choice);
+            UiThread.Run(() =>
+            {
+                EndUpdateCts(temp);
+                temp.IsUpdating = false;
+                if (!res.Ok)
+                {
+                    Status = res.Message;
+                    if (!cts.IsCancellationRequested) DialogService.Info("Instalación no completada", $"{temp.Name}\n\n{res.Message}");
+                    return;
+                }
+                ConfigService.Update(Config, c =>
+                {
+                    c.NameOverrides[temp.FolderPath] = temp.Name;
+                    c.LinkOverrides[temp.FolderPath] = new LinkOverride
+                    {
+                        Repository = temp.Repository, Provider = temp.Provider, AssetFilter = temp.AssetFilter ?? ""
+                    };
+                    if (pin) c.PinnedVersions[temp.FolderPath] = choice.Version;
+                });
+                Status = $"Instalado: {temp.Name} {choice.Version} en {temp.FolderPath}";
+                Rescan();
+            });
+        });
     }
 
     private void OpenSettings()
@@ -476,6 +556,19 @@ public class MainViewModel : INotifyPropertyChanged
                 else if (Config.AutoCheckUpdates && afterStartup)
                 {
                     CheckAllUpdates(silent: true);
+                }
+                if (afterStartup && Config.AutoCheckUpdates)
+                {
+                    Task.Run(async () =>
+                    {
+                        var upd = await SelfUpdateService.CheckAsync();
+                        if (upd == null) return;
+                        UiThread.Run(() =>
+                        {
+                            _selfUpdateUrl = upd.Value.url;
+                            SelfUpdateLabel = $"⬆ RecompVault {upd.Value.tag}";
+                        });
+                    });
                 }
             });
         }, cts.Token);
