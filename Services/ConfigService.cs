@@ -44,6 +44,12 @@ public class AppConfig
     public Dictionary<string, string> ProtectedByGame { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>Al actualizar a mano, mostrar antes las notas del release y el paquete.</summary>
     public bool ConfirmUpdatesWithChangelog { get; set; } = true;
+    /// <summary>Tiempo jugado acumulado en segundos (folderPath → s).</summary>
+    public Dictionary<string, long> PlaySeconds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Argumentos de lanzamiento por juego.</summary>
+    public Dictionary<string, string> LaunchArgs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Juegos que se lanzan como administrador.</summary>
+    public List<string> RunAsAdmin { get; set; } = new();
 }
 
 public class LinkOverride
@@ -106,6 +112,9 @@ public static class ConfigService
         c.LinkOverrides = new(c.LinkOverrides ?? new(), StringComparer.OrdinalIgnoreCase);
         c.PinnedVersions = new(c.PinnedVersions ?? new(), StringComparer.OrdinalIgnoreCase);
         c.ProtectedByGame = new(c.ProtectedByGame ?? new(), StringComparer.OrdinalIgnoreCase);
+        c.PlaySeconds = new(c.PlaySeconds ?? new(), StringComparer.OrdinalIgnoreCase);
+        c.LaunchArgs = new(c.LaunchArgs ?? new(), StringComparer.OrdinalIgnoreCase);
+        c.RunAsAdmin ??= new();
         c.ProtectedPatterns ??= RecompVault.Core.GlobMatcher.DefaultProtected.ToList();
         if (c.UndoBackupsToKeep < 1) c.UndoBackupsToKeep = 1;
         c.Favorites = c.Favorites.Distinct(StringComparer.OrdinalIgnoreCase).ToList();

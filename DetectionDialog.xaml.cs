@@ -85,6 +85,8 @@ public partial class DetectionDialog : Window
         ExeBox.SelectedItem = manualExe != null
             ? exeOptions.FirstOrDefault(o => string.Equals(o.Value, manualExe, StringComparison.OrdinalIgnoreCase)) ?? exeOptions[0]
             : exeOptions[0];
+        ArgsBox.Text = ConfigService.Get(_cfg.LaunchArgs, _g.FolderPath) ?? "";
+        AdminBox.IsChecked = ConfigService.ListContains(_cfg, _cfg.RunAsAdmin, _g.FolderPath);
         LaunchSourceText.Text = "Origen: " + (string.IsNullOrWhiteSpace(_g.LaunchSource) ? "automático" : _g.LaunchSource) +
                                 (string.IsNullOrWhiteSpace(_g.LaunchPath) ? "" : $"   ·   actual: {Rel(_g.LaunchPath)}");
 
@@ -260,12 +262,19 @@ public partial class DetectionDialog : Window
         var exe = (ExeBox.SelectedItem as Option)?.Value;
         var quiver = QuiverBox.SelectedItem as Option;
         var protectedText = string.Join("; ", RecompVault.Core.GlobMatcher.Parse(ProtectedBox.Text));
+        var args = ArgsBox.Text.Trim();
+        var admin = AdminBox.IsChecked == true;
 
         ConfigService.Update(_cfg, c =>
         {
             // nombre
             if (name.Length == 0) c.NameOverrides.Remove(_g.FolderPath);
             else if (name != _g.Name || c.NameOverrides.ContainsKey(_g.FolderPath)) c.NameOverrides[_g.FolderPath] = name;
+
+            // argumentos / administrador
+            if (args.Length == 0) c.LaunchArgs.Remove(_g.FolderPath); else c.LaunchArgs[_g.FolderPath] = args;
+            c.RunAsAdmin.RemoveAll(x => string.Equals(x, _g.FolderPath, StringComparison.OrdinalIgnoreCase));
+            if (admin) c.RunAsAdmin.Add(_g.FolderPath);
 
             // ficheros protegidos del juego
             if (protectedText.Length == 0) c.ProtectedByGame.Remove(_g.FolderPath);

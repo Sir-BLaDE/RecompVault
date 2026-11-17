@@ -35,15 +35,12 @@
                     <Button Content="{Binding UpdatesLabel}" Style="{StaticResource GhostButton}" Command="{Binding CheckUpdatesCommand}" Margin="0,0,6,4" ToolTip="Buscar actualizaciones de recomps (Quiver/GitHub/catálogo)"/>
                     <Button Content="{Binding AutoUpdateLabel}" Style="{StaticResource GhostButton}" Command="{Binding ToggleAutoUpdateCommand}" Margin="0,0,6,4" ToolTip="Activar/desactivar auto-actualización de recomps reconocidas"/>
                     <Button Content="⬇ Portadas" Style="{StaticResource GhostButton}" Command="{Binding DownloadAllCoversCommand}" Margin="0,0,6,4" ToolTip="Descargar portadas faltantes (Quiver primero, luego alternativas)"/>
-                    <Button Content="🔑SGDB" Style="{StaticResource GhostButton}" Command="{Binding SetApiKeyCommand}" Margin="0,0,6,4" ToolTip="API key SteamGridDB"/>
-                    <Button Content="🔑RAWG" Style="{StaticResource GhostButton}" Command="{Binding SetRawgKeyCommand}" Margin="0,0,6,4" ToolTip="API key RAWG"/>
-                    <Button Content="🔑IGDB" Style="{StaticResource GhostButton}" Command="{Binding SetIgdbCommand}" Margin="0,0,6,4" ToolTip="Credenciales IGDB/Twitch"/>
-                    <Button Content="🔑GitHub" Style="{StaticResource GhostButton}" Command="{Binding SetGitHubTokenCommand}" Margin="0,0,6,4" ToolTip="Token de GitHub (opcional): evita el límite de 60 consultas/hora al buscar actualizaciones"/>
                     <Button Content="⟳ Re-escanear" Style="{StaticResource GhostButton}" Command="{Binding RescanCommand}" Margin="0,0,6,4" ToolTip="Re-escanear biblioteca"/>
                     <Button Content="📁 Raíz" Style="{StaticResource GhostButton}" Click="OpenRoot_Click" Margin="0,0,6,4" ToolTip="Abrir carpeta raíz"/>
                     <Button Content="🔍 Revisar" Style="{StaticResource GhostButton}" Command="{Binding ReviewDetectionCommand}" Margin="0,0,6,4" ToolTip="Revisar la detección de todos los juegos en una tabla (vínculos aproximados, sin vincular, versiones desconocidas...)"/>
                     <Button Content="📄" Style="{StaticResource GhostButton}" Command="{Binding OpenLogCommand}" Margin="0,0,6,4" ToolTip="Abrir el registro (recompvault.log)"/>
-                    <Button Content="⚙" Style="{StaticResource GhostButton}" Click="Settings_Click" Margin="0,0,0,4" ToolTip="Configurar carpeta raíz"/>
+                    <Button Content="↶ Copias" Style="{StaticResource GhostButton}" Command="{Binding UndoManagerCommand}" Margin="0,0,6,4" ToolTip="Copias de deshacer: espacio ocupado, deshacer o borrar"/>
+                    <Button Content="⚙ Ajustes" Style="{StaticResource GhostButton}" Command="{Binding SettingsCommand}" Margin="0,0,0,4" ToolTip="Carpeta raíz, Quiver, actualizaciones, ficheros protegidos, claves y tokens"/>
                 </WrapPanel>
             </Grid>
             <Rectangle Grid.Row="1" Fill="{StaticResource AccentBrush}"/>
@@ -235,6 +232,23 @@
                                                     Visibility="{Binding HasUpdate, Converter={StaticResource BoolToVis}}">
                                                 <TextBlock Text="ACTUALIZACIÓN" Foreground="White" FontSize="9" FontWeight="Bold"/>
                                             </Border>
+                                            <!-- progreso de actualización -->
+                                            <Border VerticalAlignment="Bottom" Background="#E60F1115" Padding="10,8" Visibility="{Binding IsUpdating, Converter={StaticResource BoolToVis}}">
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource GhostButton}" Padding="7,2" Margin="8,0,0,0" ToolTip="Cancelar (se restaura lo anterior)"
+                                                            Command="{Binding DataContext.CancelUpdateCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding UpdateStage}" Foreground="White" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                                        <ProgressBar Height="5" Minimum="0" Maximum="100" Value="{Binding UpdateProgress, Mode=OneWay}" IsIndeterminate="{Binding UpdateProgressIndeterminate, Mode=OneWay}"
+                                                                     Foreground="{StaticResource Accent2Brush}" Background="#33FFFFFF" BorderThickness="0"/>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                            <!-- jugando ahora -->
+                                            <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,10" Background="#CC2E7D32" CornerRadius="8" Padding="8,3"
+                                                    Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="▶ JUGANDO" Foreground="White" FontSize="9" FontWeight="Bold"/>
+                                            </Border>
                                         </Grid>
                                     </Border>
 
@@ -257,7 +271,10 @@
                                     </Border>
 
                                     <!-- Folder path -->
-                                    <TextBlock Grid.Row="3" Text="{Binding FolderPath}" Foreground="#7E8799" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" ToolTip="{Binding FolderPath}"/>
+                                    <StackPanel Grid.Row="3" Margin="0,8,0,0">
+                                        <TextBlock Text="{Binding PlayInfo}" Foreground="{StaticResource Accent2Brush}" FontSize="10" Margin="0,0,0,2"/>
+                                        <TextBlock Text="{Binding FolderPath}" Foreground="#7E8799" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip="{Binding FolderPath}"/>
+                                    </StackPanel>
 
                                     <!-- Launch path -->
                                     <TextBlock Grid.Row="4" Text="{Binding LaunchPath}" Foreground="#8FB8FF" FontSize="9" TextTrimming="CharacterEllipsis" Margin="0,3,0,0" Opacity="0.9" ToolTip="{Binding LaunchPath}"/>

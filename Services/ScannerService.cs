@@ -156,7 +156,14 @@ public static class ScannerService
             g.PinnedVersion = ConfigService.Get(cfg.PinnedVersions, g.FolderPath) ?? "";
             g.Favorite = ConfigService.ListContains(cfg, cfg.Favorites, g.FolderPath);
             g.IsHidden = ConfigService.ListContains(cfg, cfg.Hidden, g.FolderPath);
-            lock (ConfigService.Sync) { if (cfg.LastPlayed.TryGetValue(g.FolderPath, out var lp)) g.LastPlayed = lp; }
+            lock (ConfigService.Sync)
+            {
+                if (cfg.LastPlayed.TryGetValue(g.FolderPath, out var lp)) g.LastPlayed = lp;
+                if (cfg.PlaySeconds.TryGetValue(g.FolderPath, out var ps)) g.PlaySeconds = ps;
+            }
+            // "último jugado" compartido con Quiver
+            var quiverLp = LauncherService.ReadQuiverLastPlayed(g.FolderPath);
+            if (quiverLp.HasValue && quiverLp.Value > g.LastPlayed) g.LastPlayed = quiverLp.Value;
             var custom = ConfigService.Get(cfg.NameOverrides, g.FolderPath);
             if (!string.IsNullOrWhiteSpace(custom)) { g.Name = custom.Trim(); g.NameSource = "Manual"; }
             ArtworkService.Apply(g, cfg, detached: true);

@@ -131,6 +131,9 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand UndoUpdateCommand { get; }
     public ICommand InstallVersionCommand { get; }
     public ICommand RepairCommand { get; }
+    public ICommand CancelUpdateCommand { get; }
+    public ICommand UndoManagerCommand { get; }
+    public ICommand SettingsCommand { get; }
     public ICommand ReviewDetectionCommand { get; }
 
     public MainViewModel()
@@ -170,6 +173,9 @@ public class MainViewModel : INotifyPropertyChanged
         InstallVersionCommand = new RelayCommand(o => { if (o is GameEntry g) InstallVersion(g); }, o => o is GameEntry g && !g.IsUpdating);
         RepairCommand = new RelayCommand(o => { if (o is GameEntry g) Repair(g); }, o => o is GameEntry g && !g.IsUpdating);
         ReviewDetectionCommand = new RelayCommand(_ => ReviewDetection());
+        CancelUpdateCommand = new RelayCommand(o => { if (o is GameEntry g) CancelUpdate(g); });
+        UndoManagerCommand = new RelayCommand(_ => { var d = new UndoManagerDialog(this) { Owner = ActiveOwner() }; d.ShowDialog(); });
+        SettingsCommand = new RelayCommand(_ => OpenSettings());
         RescanCommand = new RelayCommand(_ => Rescan());
     }
 
@@ -193,6 +199,15 @@ public class MainViewModel : INotifyPropertyChanged
     {
         var app = System.Windows.Application.Current;
         return app?.Windows.OfType<System.Windows.Window>().FirstOrDefault(w => w.IsActive && w.IsVisible) ?? app?.MainWindow;
+    }
+
+    private void OpenSettings()
+    {
+        var dlg = new SettingsDialog(Config) { Owner = ActiveOwner() };
+        if (dlg.ShowDialog() != true) return;
+        OnPropertyChanged(nameof(AutoUpdateLabel));
+        if (dlg.NeedsRescan) Rescan();
+        else Status = "Ajustes guardados.";
     }
 
     private void ReviewDetection()
@@ -301,7 +316,7 @@ public class MainViewModel : INotifyPropertyChanged
         });
     }
 
-    private void UndoUpdate(GameEntry g)
+    public void UndoUpdate(GameEntry g)
     {
         var m = UndoStore.Latest(g.FolderPath);
         if (m == null) { Status = $"{g.Name}: no hay ninguna actualización que deshacer."; g.HasUndo = false; return; }
@@ -394,11 +409,27 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void Launch(GameEntry g)
     {
-        var err = LauncherService.Launch(g);
+        if (g.IsRunning) { Status = $"{g.Name} ya está abierto."; return; }
+        var err = LauncherService.Launch(g, Config, out var proc);
         if (err != null) { Status = $"No se pudo lanzar {g.Name}: {err}"; DialogService.Info("No se pudo lanzar", $"{g.Name}\n\n{err}"); return; }
         ConfigService.Update(Config, c => c.LastPlayed[g.FolderPath] = g.LastPlayed);
         Status = $"Lanzado: {g.Name}";
         if (SortMode == "Jugados recientemente") ApplyFilter();
+
+        // tiempo de juego
+        g.IsRunning = true;
+        Task.Run(async () =>
+        {
+            var secs = await LauncherService.TrackSessionAsync(g, proc);
+            UiThread.Run(() =>
+            {
+                g.IsRunning = false;
+                if (secs <= 0) return;
+                g.PlaySeconds += secs;
+                ConfigService.Update(Config, c => c.PlaySeconds[g.FolderPath] = g.PlaySeconds);
+                Status = $"{g.Name}: sesión de {TimeSpan.FromSeconds(secs):h\\:mm\\:ss} · total {g.PlayInfo}";
+            });
+        });
     }
 
     private void ToggleFavorite(GameEntry g)
@@ -791,12 +822,14 @@ public class MainViewModel : INotifyPropertyChanged
     private void StartUpdate(GameEntry g, UpdateService.InstallChoice? choice = null, bool? pin = false)
     {
         g.IsUpdating = true;
+        var cts = BeginUpdateCts(g);
         Status = $"Instalando {g.Name} {choice?.Version ?? g.LatestVersion}...";
         Task.Run(async () =>
         {
-            var res = await UpdateService.UpdateAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = s)), default, choice);
+            var res = await UpdateService.UpdateAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = s)), cts.Token, choice);
             UiThread.Run(() =>
             {
+                EndUpdateCts(g);
                 g.IsUpdating = false;
                 if (res.Ok && pin.HasValue)
                 {
@@ -806,10 +839,33 @@ public class MainViewModel : INotifyPropertyChanged
                 }
                 RaiseUpdateCounts();
                 Status = res.Message;
-                if (!res.Ok && !res.Manual)
+                if (!res.Ok && !res.Manual && !cts.IsCancellationRequested)
                     DialogService.Info("Actualización no completada", $"{g.Name}\n\n{res.Message}\n\nRepositorio: {g.Repository}\nPaquete: {g.UpdateAssetName ?? "(ninguno)"}\nRegistro: {Log.FilePath}");
             });
         });
+    }
+
+    private readonly Dictionary<GameEntry, CancellationTokenSource> _updateCts = new();
+
+    private CancellationTokenSource BeginUpdateCts(GameEntry g)
+    {
+        var cts = new CancellationTokenSource();
+        lock (_updateCts) _updateCts[g] = cts;
+        UiThread.Run(() => { g.UpdateProgress = -1; g.UpdateStage = "Preparando"; });
+        return cts;
+    }
+
+    private void EndUpdateCts(GameEntry g)
+    {
+        lock (_updateCts) { if (_updateCts.Remove(g, out var c)) c.Dispose(); }
+        g.UpdateProgress = -1; g.UpdateStage = "";
+    }
+
+    private void CancelUpdate(GameEntry g)
+    {
+        lock (_updateCts) { if (_updateCts.TryGetValue(g, out var c)) c.Cancel(); }
+        g.UpdateStage = "Cancelando...";
+        Status = $"Cancelando la actualización de {g.Name} (se restaura lo anterior)...";
     }
 
     private void AutoUpdateAll()
@@ -836,9 +892,10 @@ public class MainViewModel : INotifyPropertyChanged
                 i++;
                 var n = i;
                 UiThread.Run(() => { g.IsUpdating = true; Status = $"Auto-actualizando ({n}/{list.Count}) {g.Name}..."; });
-                var res = await UpdateService.UpdateAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = $"({n}/{list.Count}) {s}")));
-                if (res.Ok) ok++; else failed.Add($"• {g.Name}: {res.Message}");
-                UiThread.Run(() => g.IsUpdating = false);
+                var cts = BeginUpdateCts(g);
+                var res = await UpdateService.UpdateAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = $"({n}/{list.Count}) {s}")), cts.Token);
+                if (res.Ok) ok++; else if (!cts.IsCancellationRequested) failed.Add($"• {g.Name}: {res.Message}");
+                UiThread.Run(() => { EndUpdateCts(g); g.IsUpdating = false; });
             }
             UiThread.Run(() =>
             {

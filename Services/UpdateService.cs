@@ -462,7 +462,7 @@ public static class UpdateService
         try
         {
             var downloadPath = Path.Combine(tempRoot, name);
-            var err = await DownloadAsync(url, downloadPath, cfg, s => progress?.Report($"Descargando {g.Name} {version}: {s}"), ct).ConfigureAwait(false);
+            var err = await DownloadAsync(url, downloadPath, cfg, s => progress?.Report($"Descargando {g.Name} {version}: {s}"), ct, Stage(g, "Descargando")).ConfigureAwait(false);
             if (choice == null && err != null && (err.Contains("404") || err.Contains("410")) && !string.IsNullOrWhiteSpace(g.Repository))
             {
                 // el asset de la caché ya no existe: pedir el release actual y reintentar una vez
@@ -473,7 +473,7 @@ public static class UpdateService
                     url = g.UpdateAssetUrl!; version = g.LatestVersion; digest = g.UpdateAssetDigest;
                     name = PathUtil.SafeFileName(g.UpdateAssetName ?? Path.GetFileName(new Uri(url).AbsolutePath), 150);
                     downloadPath = Path.Combine(tempRoot, name);
-                    err = await DownloadAsync(url, downloadPath, cfg, s => progress?.Report($"Descargando {g.Name} {version}: {s}"), ct).ConfigureAwait(false);
+                    err = await DownloadAsync(url, downloadPath, cfg, s => progress?.Report($"Descargando {g.Name} {version}: {s}"), ct, Stage(g, "Descargando")).ConfigureAwait(false);
                 }
             }
             if (err != null) return new UpdateOutcome(false, "Descarga fallida: " + err);
@@ -484,12 +484,14 @@ public static class UpdateService
             if (!string.IsNullOrWhiteSpace(digest) && digest!.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
             {
                 progress?.Report("Verificando SHA-256...");
+                Stage(g, "Verificando");
                 var expected = digest["sha256:".Length..].Trim();
                 if (!sha.Equals(expected, StringComparison.OrdinalIgnoreCase))
                     return new UpdateOutcome(false, "La verificación SHA-256 no coincide; descarga descartada.");
             }
 
             progress?.Report($"Instalando {g.Name} {version}...");
+            Stage(g, "Instalando");
             var lower = name.ToLowerInvariant();
 
             if (ReleaseAssetPicker.IsInstaller(name))
@@ -562,7 +564,14 @@ public static class UpdateService
         }
     }
 
-    private static async Task<string?> DownloadAsync(string url, string dest, AppConfig cfg, Action<string> report, CancellationToken ct)
+    /// <summary>Actualiza la barra de la tarjeta: etapa y porcentaje.</summary>
+    private static Action<double> Stage(GameEntry g, string stage)
+    {
+        UiThread.Run(() => { g.UpdateStage = stage; g.UpdateProgress = -1; });
+        return p => UiThread.Run(() => { g.UpdateStage = $"{stage} {p:0}%"; g.UpdateProgress = p; });
+    }
+
+    private static async Task<string?> DownloadAsync(string url, string dest, AppConfig cfg, Action<string> report, CancellationToken ct, Action<double>? percent = null)
     {
         try
         {
@@ -588,6 +597,7 @@ public static class UpdateService
                 {
                     sw.Restart();
                     report(total > 0 ? $"{read * 100 / total}% ({read / 1048576} / {total / 1048576} MB)" : $"{read / 1048576} MB");
+                    if (total > 0) percent?.Invoke(read * 100.0 / total);
                 }
             }
             if (total > 0 && read < total) return "descarga incompleta";

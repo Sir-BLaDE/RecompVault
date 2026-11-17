@@ -33,7 +33,39 @@ public class GameEntry : INotifyPropertyChanged
     private bool _isHidden;
     public bool IsHidden { get => _isHidden; set => Set(ref _isHidden, value); }
 
-    public DateTime LastPlayed { get; set; }
+    private DateTime _lastPlayed;
+    public DateTime LastPlayed { get => _lastPlayed; set { if (Set(ref _lastPlayed, value)) OnPropertyChanged(nameof(PlayInfo)); } }
+
+    private long _playSeconds;
+    /// <summary>Tiempo jugado acumulado (medido por RecompVault).</summary>
+    public long PlaySeconds { get => _playSeconds; set { if (Set(ref _playSeconds, value)) OnPropertyChanged(nameof(PlayInfo)); } }
+
+    private bool _isRunning;
+    public bool IsRunning { get => _isRunning; set { if (Set(ref _isRunning, value)) OnPropertyChanged(nameof(PlayInfo)); } }
+
+    public string PlayInfo
+    {
+        get
+        {
+            if (IsRunning) return "▶ jugando ahora";
+            var parts = new List<string>();
+            if (PlaySeconds >= 60)
+            {
+                var t = TimeSpan.FromSeconds(PlaySeconds);
+                parts.Add(t.TotalHours >= 1 ? $"⏱ {(int)t.TotalHours} h {t.Minutes} min" : $"⏱ {t.Minutes} min");
+            }
+            if (LastPlayed > DateTime.MinValue.AddYears(1)) parts.Add("último: " + LastPlayed.ToString("dd/MM/yy"));
+            return string.Join(" · ", parts);
+        }
+    }
+
+    // ---------------------------------------------------------------- progreso de actualización
+    private double _updateProgress = -1;
+    /// <summary>0-100 durante la descarga; -1 = indeterminado.</summary>
+    public double UpdateProgress { get => _updateProgress; set { if (Set(ref _updateProgress, value)) OnPropertyChanged(nameof(UpdateProgressIndeterminate)); } }
+    public bool UpdateProgressIndeterminate => UpdateProgress < 0;
+    private string _updateStage = "";
+    public string UpdateStage { get => _updateStage; set => Set(ref _updateStage, value ?? ""); }
 
     /// <summary>El nombre viene de gametitles.json (más fiable que una coincidencia difusa con Quiver).</summary>
     public bool NameFromTitleMap { get; set; }
