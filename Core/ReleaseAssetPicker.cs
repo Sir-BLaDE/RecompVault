@@ -1,3 +1,4 @@
+using System.IO;
 namespace RecompVault.Core;
 
 public sealed record ReleaseAsset(string Name, string Url, string? Digest = null, long Size = 0);

@@ -1,3 +1,4 @@
+using System.IO;
 namespace RecompVault.Core;
 
 /// <summary>Elige el ejecutable de lanzamiento de una carpeta de juego.</summary>

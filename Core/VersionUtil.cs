@@ -1,3 +1,4 @@
+using System.IO;
 namespace RecompVault.Core;
 
 /// <summary>
