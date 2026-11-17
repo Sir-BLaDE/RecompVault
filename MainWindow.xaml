@@ -38,8 +38,10 @@
                     <Button Content="🔑SGDB" Style="{StaticResource GhostButton}" Command="{Binding SetApiKeyCommand}" Margin="0,0,6,4" ToolTip="API key SteamGridDB"/>
                     <Button Content="🔑RAWG" Style="{StaticResource GhostButton}" Command="{Binding SetRawgKeyCommand}" Margin="0,0,6,4" ToolTip="API key RAWG"/>
                     <Button Content="🔑IGDB" Style="{StaticResource GhostButton}" Command="{Binding SetIgdbCommand}" Margin="0,0,6,4" ToolTip="Credenciales IGDB/Twitch"/>
+                    <Button Content="🔑GitHub" Style="{StaticResource GhostButton}" Command="{Binding SetGitHubTokenCommand}" Margin="0,0,6,4" ToolTip="Token de GitHub (opcional): evita el límite de 60 consultas/hora al buscar actualizaciones"/>
                     <Button Content="⟳ Re-escanear" Style="{StaticResource GhostButton}" Command="{Binding RescanCommand}" Margin="0,0,6,4" ToolTip="Re-escanear biblioteca"/>
                     <Button Content="📁 Raíz" Style="{StaticResource GhostButton}" Click="OpenRoot_Click" Margin="0,0,6,4" ToolTip="Abrir carpeta raíz"/>
+                    <Button Content="📄" Style="{StaticResource GhostButton}" Command="{Binding OpenLogCommand}" Margin="0,0,6,4" ToolTip="Abrir el registro (recompvault.log)"/>
                     <Button Content="⚙" Style="{StaticResource GhostButton}" Click="Settings_Click" Margin="0,0,0,4" ToolTip="Configurar carpeta raíz"/>
                 </WrapPanel>
             </Grid>
@@ -82,7 +84,11 @@
                     </Grid>
                     <StackPanel Grid.Row="2" Margin="2,0,0,10">
                         <CheckBox Content="Solo favoritos ★" IsChecked="{Binding FavoritesOnly}" Foreground="{StaticResource TextBrush}" Margin="0,0,0,6"/>
-                        <CheckBox Content="Mostrar ocultos" IsChecked="{Binding ShowHidden}" Foreground="{StaticResource TextBrush}"/>
+                        <CheckBox Content="Mostrar ocultos" IsChecked="{Binding ShowHidden}" Foreground="{StaticResource TextBrush}" Margin="0,0,0,8"/>
+                        <DockPanel>
+                            <TextBlock Text="Orden" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0" DockPanel.Dock="Left"/>
+                            <ComboBox ItemsSource="{Binding SortModes}" SelectedItem="{Binding SortMode}" Padding="6,3"/>
+                        </DockPanel>
                     </StackPanel>
                     <ListBox Grid.Row="3" ItemsSource="{Binding Systems}" SelectedItem="{Binding SelectedSystem}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
@@ -122,7 +128,7 @@
 
             <!-- Main -->
             <Grid Grid.Column="1">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12,14,14">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12,14,14" CanContentScroll="False" IsDeferredScrollingEnabled="False">
                     <ItemsControl ItemsSource="{Binding VisibleGames}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -140,6 +146,11 @@
                                             <Separator/>
                                             <MenuItem Header="Buscar actualización" Command="{Binding Tag.CheckUpdateCommand}" CommandParameter="{Binding DataContext}"/>
                                             <MenuItem Header="Actualizar recomp" Command="{Binding Tag.UpdateGameCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <MenuItem Header="Abrir página de releases" Command="{Binding Tag.OpenRepositoryCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <Separator/>
+                                            <MenuItem Header="Elegir ejecutable..." Command="{Binding Tag.PickExeCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <MenuItem Header="Elegir carátula local..." Command="{Binding Tag.PickCoverCommand}" CommandParameter="{Binding DataContext}"/>
+                                            <MenuItem Header="Buscar portada online..." Command="{Binding Tag.SearchCoverCommand}" CommandParameter="{Binding DataContext}"/>
                                             <Separator/>
                                             <MenuItem Header="Eliminar juego..." Command="{Binding Tag.DeleteGameCommand}" CommandParameter="{Binding DataContext}"/>
                                         </ContextMenu>
@@ -159,7 +170,7 @@
                                     <Border Grid.Row="0" CornerRadius="10" ClipToBounds="True">
                                         <Grid>
                                             <Border Background="{StaticResource AccentBrush}">
-                                                <Image Source="{Binding CoverImage}" Stretch="UniformToFill" Visibility="{Binding HasCover, Converter={StaticResource BoolToVis}}" />
+                                                <Image Source="{Binding CoverImage}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" Visibility="{Binding HasCover, Converter={StaticResource BoolToVis}}" />
                                             </Border>
                                             <!-- fallback gradient panel when no cover -->
                                             <Border Visibility="{Binding HasCover, Converter={StaticResource InverseBoolToVis}}">
@@ -247,14 +258,14 @@
 
                                     <!-- Version / update info -->
                                     <TextBlock Grid.Row="5" Text="{Binding VersionInfo}" Foreground="#00D4AA" FontSize="10" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
-                                               Visibility="{Binding HasVersionInfo, Converter={StaticResource BoolToVis}}" ToolTip="{Binding VersionInfo}"/>
+                                               Visibility="{Binding HasVersionInfo, Converter={StaticResource BoolToVis}}" ToolTip="{Binding Repository}"/>
 
                                     <!-- Buttons -->
                                     <WrapPanel Grid.Row="6" Margin="0,10,0,0">
                                         <Button Content="▶ Jugar" Style="{StaticResource PrimaryButton}"
                                                 Command="{Binding DataContext.LaunchCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}" IsEnabled="{Binding CanLaunch}" Padding="12,6" Margin="0,0,6,6"/>
-                                        <Button Content="⟳" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Actualizar recomp"
+                                        <Button Content="⟳" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Actualizar recomp (comprueba e instala la última versión)"
                                                 Command="{Binding DataContext.UpdateGameCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"/>
                                         <Button Content="★" Style="{StaticResource GhostButton}" Padding="8,5" Margin="0,0,4,6" ToolTip="Favorito"
@@ -282,11 +293,16 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
                 </ScrollViewer>
+                <Border Background="#AA0F1115" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" IsHitTestVisible="False">
+                    <Border Background="#1A1E28" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="28,22" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="Escaneando biblioteca..." FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}"/>
+                    </Border>
+                </Border>
                 <Border Background="#AA0F1115" Visibility="{Binding HasNoVisibleGames, Converter={StaticResource BoolToVis}}" IsHitTestVisible="False">
                     <Border Background="#1A1E28" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="28,22" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <StackPanel>
                             <TextBlock Text="No se encontraron juegos" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center"/>
-                            <TextBlock Text="Prueba a cambiar el filtro, la búsqueda o re-escanear la biblioteca." FontSize="13" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                            <TextBlock Text="Prueba a cambiar el filtro o la búsqueda, revisa la carpeta raíz (⚙) o re-escanea la biblioteca." FontSize="13" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
                         </StackPanel>
                     </Border>
                 </Border>

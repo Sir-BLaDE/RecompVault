@@ -1,8 +1,11 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using System.Windows.Threading;
+using RecompVault.Core;
 using RecompVault.Models;
 using RecompVault.Services;
 
@@ -15,21 +18,68 @@ public class RelayCommand : ICommand
     public RelayCommand(Action<object?> execute, Func<object?, bool>? canExecute = null)
     { _execute = execute; _canExecute = canExecute; }
     public bool CanExecute(object? p) => _canExecute?.Invoke(p) ?? true;
-    public void Execute(object? p) => _execute(p);
+    public void Execute(object? p)
+    {
+        // Un error en un comando nunca debe cerrar la aplicación.
+        try { _execute(p); }
+        catch (Exception ex)
+        {
+            Log.Error("Error en comando", ex);
+            DialogService.Info("Error", "Ha ocurrido un error inesperado:\n\n" + ex.Message + "\n\nDetalles en: " + Log.FilePath);
+        }
+    }
     public event EventHandler? CanExecuteChanged { add { CommandManager.RequerySuggested += value; } remove { CommandManager.RequerySuggested -= value; } }
+}
+
+/// <summary>ObservableCollection que puede sustituir todo su contenido con una sola notificación (Reset).</summary>
+public class RangeObservableCollection<T> : ObservableCollection<T>
+{
+    public void ReplaceAll(IEnumerable<T> items)
+    {
+        var list = items as IList<T> ?? items.ToList();
+        if (list.Count == Items.Count && list.SequenceEqual(Items)) return;
+        Items.Clear();
+        foreach (var i in list) Items.Add(i);
+        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
 }
 
 public class MainViewModel : INotifyPropertyChanged
 {
-    public ObservableCollection<GameEntry> AllGames { get; } = new();
-    public ObservableCollection<GameEntry> VisibleGames { get; } = new();
-    public ObservableCollection<SystemItem> Systems { get; } = new();
+    public RangeObservableCollection<GameEntry> AllGames { get; } = new();
+    public RangeObservableCollection<GameEntry> VisibleGames { get; } = new();
+    public RangeObservableCollection<SystemItem> Systems { get; } = new();
+
+    public IReadOnlyList<string> SortModes { get; } = new[] { "Sistema", "Nombre", "Jugados recientemente", "Con actualización" };
+
+    private readonly DispatcherTimer _searchTimer;
+    private CancellationTokenSource? _scanCts;
+    private int _scanGeneration;
+    private bool _checkingUpdates;
+    private bool _autoUpdating;
+    private bool _rebuildingSystems;
 
     private string _search = "";
-    public string Search { get => _search; set { _search = value; OnPropertyChanged(); ApplyFilter(); } }
+    public string Search
+    {
+        get => _search;
+        set { if (_search == value) return; _search = value; OnPropertyChanged(); _searchTimer.Stop(); _searchTimer.Start(); }
+    }
 
     private SystemItem _selectedSystem = SystemItem.FromName("Todos");
-    public SystemItem SelectedSystem { get => _selectedSystem; set { _selectedSystem = value ?? SystemItem.FromName("Todos"); OnPropertyChanged(); ApplyFilter(); } }
+    public SystemItem SelectedSystem
+    {
+        get => _selectedSystem;
+        set
+        {
+            if (_rebuildingSystems) return; // el ListBox pone null al reconstruir la lista
+            var v = value ?? Systems.FirstOrDefault() ?? SystemItem.FromName("Todos");
+            if (ReferenceEquals(_selectedSystem, v)) return;
+            _selectedSystem = v; OnPropertyChanged(); ApplyFilter();
+        }
+    }
 
     private bool _favoritesOnly;
     public bool FavoritesOnly { get => _favoritesOnly; set { _favoritesOnly = value; OnPropertyChanged(); ApplyFilter(); } }
@@ -37,12 +87,18 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _showHidden;
     public bool ShowHidden { get => _showHidden; set { _showHidden = value; OnPropertyChanged(); RebuildSystems(); ApplyFilter(); } }
 
+    private string _sortMode = "Sistema";
+    public string SortMode { get => _sortMode; set { _sortMode = value ?? "Sistema"; OnPropertyChanged(); ApplyFilter(); } }
+
     private string _status = "Listo.";
     public string Status { get => _status; set { _status = value; OnPropertyChanged(); } }
 
+    private bool _isBusy;
+    public bool IsBusy { get => _isBusy; set { _isBusy = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasNoVisibleGames)); } }
+
     public AppConfig Config { get; }
 
-    public bool HasNoVisibleGames => VisibleGames.Count == 0;
+    public bool HasNoVisibleGames => VisibleGames.Count == 0 && !IsBusy;
     public string AutoUpdateLabel => Config.AutoUpdateRecomps ? "Auto-update: ON" : "Auto-update: OFF";
     public int UpdatesAvailableCount => AllGames.Count(g => g.HasUpdate);
     public string UpdatesLabel => UpdatesAvailableCount > 0 ? $"↻ Updates ({UpdatesAvailableCount})" : "↻ Updates";
@@ -59,7 +115,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand SetApiKeyCommand { get; }
     public ICommand SetRawgKeyCommand { get; }
     public ICommand SetIgdbCommand { get; }
-
+    public ICommand SetGitHubTokenCommand { get; }
     public ICommand RenameGameCommand { get; }
     public ICommand HideGameCommand { get; }
     public ICommand UnhideGameCommand { get; }
@@ -69,118 +125,161 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand CheckUpdateCommand { get; }
     public ICommand UpdateGameCommand { get; }
     public ICommand ToggleAutoUpdateCommand { get; }
+    public ICommand OpenRepositoryCommand { get; }
+    public ICommand OpenLogCommand { get; }
 
     public MainViewModel()
     {
         Config = ConfigService.Load();
-        LaunchCommand = new RelayCommand(o => { if (o is GameEntry g) { LauncherService.Launch(g); ConfigService.Save(Config); Status = $"Lanzado: {g.Name}"; } });
-        ToggleFavoriteCommand = new RelayCommand(o => { if (o is GameEntry g) { g.Favorite = !g.Favorite; if (g.Favorite) { if (!Config.Favorites.Contains(g.FolderPath)) Config.Favorites.Add(g.FolderPath); } else Config.Favorites.Remove(g.FolderPath); ConfigService.Save(Config); ApplyFilter(); } });
-        OpenFolderCommand = new RelayCommand(o => { if (o is GameEntry g) LauncherService.OpenFolder(g.FolderPath); });
+        _searchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(220) };
+        _searchTimer.Tick += (_, _) => { _searchTimer.Stop(); ApplyFilter(); };
+        VisibleGames.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoVisibleGames));
+
+        LaunchCommand = new RelayCommand(o => { if (o is GameEntry g) Launch(g); });
+        ToggleFavoriteCommand = new RelayCommand(o => { if (o is GameEntry g) ToggleFavorite(g); });
+        OpenFolderCommand = new RelayCommand(o => { if (o is GameEntry g) { var e = LauncherService.OpenFolder(g.FolderPath); if (e != null) Status = e; } });
         PickExeCommand = new RelayCommand(o => { if (o is GameEntry g) PickExe(g); });
         PickCoverCommand = new RelayCommand(o => { if (o is GameEntry g) PickCover(g); });
         DownloadCoverCommand = new RelayCommand(o => { if (o is GameEntry g) DownloadCover(g); });
         SearchCoverCommand = new RelayCommand(o => { if (o is GameEntry g) SearchCover(g); });
         DownloadAllCoversCommand = new RelayCommand(_ => DownloadAllCovers());
-        SetApiKeyCommand = new RelayCommand(_ => SetApiKey());
-        SetRawgKeyCommand = new RelayCommand(_ => SetRawgKey());
+        SetApiKeyCommand = new RelayCommand(_ => PromptKey("SteamGridDB API key", "Pega tu API key de SteamGridDB (gratis en steamgriddb.com/profile/preferences/api). Vacío para borrar.", c => c.SteamGridDbApiKey, (c, v) => c.SteamGridDbApiKey = v));
+        SetRawgKeyCommand = new RelayCommand(_ => PromptKey("RAWG API key", "Pega tu API key de RAWG (gratis en rawg.io/apidocs). Vacío para borrar.", c => c.RawgApiKey, (c, v) => c.RawgApiKey = v));
         SetIgdbCommand = new RelayCommand(_ => SetIgdb());
-
+        SetGitHubTokenCommand = new RelayCommand(_ => PromptKey("Token de GitHub",
+            "Opcional. Con un token (github.com/settings/tokens, sin permisos, tipo 'fine-grained' de solo lectura pública) el límite de la API pasa de 60 a 5000 consultas/hora. Vacío para borrar.",
+            c => c.GitHubToken, (c, v) => c.GitHubToken = v));
         RenameGameCommand = new RelayCommand(o => { if (o is GameEntry g) RenameGame(g); });
         HideGameCommand = new RelayCommand(o => { if (o is GameEntry g) HideGame(g); });
         UnhideGameCommand = new RelayCommand(o => { if (o is GameEntry g) UnhideGame(g); });
         DeleteGameCommand = new RelayCommand(o => { if (o is GameEntry g) DeleteGame(g); });
         SyncQuiverCommand = new RelayCommand(_ => SyncQuiver());
-        CheckUpdatesCommand = new RelayCommand(_ => CheckAllUpdates());
+        CheckUpdatesCommand = new RelayCommand(_ => CheckAllUpdates(silent: false));
         CheckUpdateCommand = new RelayCommand(o => { if (o is GameEntry g) CheckSingleUpdate(g); });
         UpdateGameCommand = new RelayCommand(o => { if (o is GameEntry g) UpdateSingleGame(g); });
-        ToggleAutoUpdateCommand = new RelayCommand(_ => { Config.AutoUpdateRecomps = !Config.AutoUpdateRecomps; ConfigService.Save(Config); Status = Config.AutoUpdateRecomps ? "Auto-actualización de recomps: ACTIVADA — se aplicará al detectar actualizaciones." : "Auto-actualización de recomps: DESACTIVADA"; OnPropertyChanged(nameof(AutoUpdateLabel)); });
+        ToggleAutoUpdateCommand = new RelayCommand(_ => ToggleAutoUpdate());
+        OpenRepositoryCommand = new RelayCommand(o => { if (o is GameEntry g) OpenRepository(g); });
+        OpenLogCommand = new RelayCommand(_ => { if (File.Exists(Log.FilePath)) LauncherService.OpenUrl(Log.FilePath); else Status = "Aún no hay registro."; });
         RescanCommand = new RelayCommand(_ => Rescan());
-        Rescan();
+    }
+
+    // ------------------------------------------------------------------ escaneo
+
+    public void Rescan(bool afterStartup = false)
+    {
+        _scanCts?.Cancel();
+        var cts = _scanCts = new CancellationTokenSource();
+        var gen = Interlocked.Increment(ref _scanGeneration);
+        IsBusy = true;
+        Status = "Escaneando biblioteca...";
+        var root = Config.RootPath;
+
+        Task.Run(() =>
+        {
+            QuiverLibrary? lib = null;
+            List<GameEntry> scanned;
+            try
+            {
+                QuiverMatcher.ClearCache();
+                lib = QuiverService.Load(Config);
+                scanned = ScannerService.Scan(root, Config, lib);
+                foreach (var g in scanned) QuiverService.ApplyKnownLatest(g, lib);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Error escaneando", ex);
+                UiThread.Run(() => { IsBusy = false; Status = "Error al escanear: " + ex.Message; });
+                return;
+            }
+            if (cts.IsCancellationRequested || gen != _scanGeneration) return;
+
+            UiThread.Run(() =>
+            {
+                if (gen != _scanGeneration) return;
+                AllGames.ReplaceAll(scanned);
+                IsBusy = false;
+                RebuildSystems();
+                ApplyFilter();
+                RaiseUpdateCounts();
+
+                var withCover = AllGames.Count(g => g.HasCover);
+                var external = AllGames.Count(g => g.IsExternal);
+                Status = $"{AllGames.Count} juegos" + (external > 0 ? $" ({external} de Quiver fuera de la raíz)" : "") +
+                         $" · portadas {withCover}/{AllGames.Count} · " +
+                         (lib == null ? "Quiver no detectado" : $"Quiver: {lib.Apps.Count} apps");
+                if (!Directory.Exists(root)) Status = $"La carpeta raíz no existe: {root}. Pulsa ⚙ para elegirla.";
+
+                if (!Config.AutoCoverAttempted && AllGames.Count > 0)
+                {
+                    ConfigService.Update(Config, c => c.AutoCoverAttempted = true);
+                    DownloadAllCovers(onlyQuiverIfNoKeys: true);
+                }
+                else if (Config.AutoCheckUpdates && afterStartup)
+                {
+                    CheckAllUpdates(silent: true);
+                }
+            });
+        }, cts.Token);
+    }
+
+    // ------------------------------------------------------------------ acciones por juego
+
+    private void Launch(GameEntry g)
+    {
+        var err = LauncherService.Launch(g);
+        if (err != null) { Status = $"No se pudo lanzar {g.Name}: {err}"; DialogService.Info("No se pudo lanzar", $"{g.Name}\n\n{err}"); return; }
+        ConfigService.Update(Config, c => c.LastPlayed[g.FolderPath] = g.LastPlayed);
+        Status = $"Lanzado: {g.Name}";
+        if (SortMode == "Jugados recientemente") ApplyFilter();
+    }
+
+    private void ToggleFavorite(GameEntry g)
+    {
+        g.Favorite = !g.Favorite;
+        ConfigService.Update(Config, c =>
+        {
+            c.Favorites.RemoveAll(f => string.Equals(f, g.FolderPath, StringComparison.OrdinalIgnoreCase));
+            if (g.Favorite) c.Favorites.Add(g.FolderPath);
+        });
+        if (FavoritesOnly) ApplyFilter();
     }
 
     private void PickExe(GameEntry g)
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "Selecciona el ejecutable de lanzamiento",
-            Filter = "Ejecutables|*.exe;*.bat;*.cmd|Todos|*.*",
+            Title = $"Ejecutable de {g.Name}",
+            Filter = "Ejecutables|*.exe;*.bat;*.cmd;*.lnk|Todos|*.*",
             InitialDirectory = Directory.Exists(g.FolderPath) ? g.FolderPath : null
         };
-        if (dlg.ShowDialog() == true)
-        {
-            g.LaunchPath = dlg.FileName;
-            Config.LaunchOverrides[g.FolderPath] = dlg.FileName;
-            ConfigService.Save(Config);
-            ArtworkService.Apply(g, Config);
-            Status = $"Ejecutable actualizado: {g.Name}";
-        }
+        if (dlg.ShowDialog() != true) return;
+        g.LaunchPath = dlg.FileName;
+        ConfigService.Update(Config, c => c.LaunchOverrides[g.FolderPath] = dlg.FileName);
+        Task.Run(() => ArtworkService.Apply(g, Config));
+        Status = $"Ejecutable actualizado: {g.Name}";
     }
 
     private void PickCover(GameEntry g)
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "Selecciona la carátula/logo (imagen)",
-            Filter = "Imágenes|*.png;*.jpg;*.jpeg;*.bmp;*.ico;*.webp|Todos|*.*",
+            Title = $"Carátula de {g.Name}",
+            Filter = "Imágenes|*.png;*.jpg;*.jpeg;*.bmp;*.ico;*.webp;*.gif|Todos|*.*",
             InitialDirectory = Directory.Exists(g.FolderPath) ? g.FolderPath : null
         };
-        if (dlg.ShowDialog() == true)
+        if (dlg.ShowDialog() != true) return;
+        var file = dlg.FileName;
+        Task.Run(async () =>
         {
-            g.CoverImage = null;
-            Config.CoverOverrides[g.FolderPath] = dlg.FileName;
-            ConfigService.Save(Config);
-            ArtworkService.Apply(g, Config);
-            Status = $"Carátula actualizada: {g.Name}";
-        }
+            var ok = await CoverDownloadService.ApplyFromFileAsync(g, file, Config);
+            UiThread.Run(() => Status = ok ? $"Carátula actualizada: {g.Name}" : "Esa imagen no se puede leer.");
+        });
     }
 
     private void SearchCover(GameEntry g)
     {
-        try
-        {
-            var dlg = new CoverPickerDialog(g, Config) { Owner = System.Windows.Application.Current?.MainWindow };
-            var res = dlg.ShowDialog();
-            if (res == true && dlg.Applied)
-                Status = $"Portada aplicada: {g.Name}";
-            else
-                Status = $"Sin cambios de portada para: {g.Name}";
-        }
-        catch (Exception ex)
-        {
-            Status = "No se pudo abrir el selector de portadas: " + ex.Message;
-        }
-    }
-
-
-
-    private void SetApiKey()
-    {
-        var key = DialogService.Prompt("SteamGridDB API key", "Pega tu API key de SteamGridDB (gratis en steamgriddb.com/api/v2). Dejar vacío para borrar.", Config.SteamGridDbApiKey ?? "");
-        if (key == null) return;
-        Config.SteamGridDbApiKey = key.Trim();
-        ConfigService.Save(Config);
-        Status = string.IsNullOrWhiteSpace(Config.SteamGridDbApiKey) ? "API key borrada." : "SteamGridDB API key guardada.";
-    }
-
-    private void SetRawgKey()
-    {
-        var key = DialogService.Prompt("RAWG API key", "Pega tu API key de RAWG (gratis en rawg.io/apidocs). Dejar vacío para borrar.", Config.RawgApiKey ?? "");
-        if (key == null) return;
-        Config.RawgApiKey = key.Trim();
-        ConfigService.Save(Config);
-        Status = string.IsNullOrWhiteSpace(Config.RawgApiKey) ? "RAWG key borrada." : "RAWG API key guardada.";
-    }
-
-    private void SetIgdb()
-    {
-        var id = DialogService.Prompt("IGDB (Twitch) Client ID", "Pega tu Client ID de IGDB/Twitch (dev.twitch.tv). Dejar vacío para borrar.", Config.IgdbClientId ?? "");
-        if (id == null) return;
-        var secret = DialogService.Prompt("IGDB (Twitch) Client Secret", "Pega tu Client Secret de IGDB/Twitch.", Config.IgdbClientSecret ?? "");
-        if (secret == null) return;
-        Config.IgdbClientId = id.Trim();
-        Config.IgdbClientSecret = secret.Trim();
-        ConfigService.Save(Config);
-        Status = (!string.IsNullOrWhiteSpace(Config.IgdbClientId) && !string.IsNullOrWhiteSpace(Config.IgdbClientSecret)) ? "IGDB credenciales guardadas." : "IGDB credenciales borradas.";
+        var dlg = new CoverPickerDialog(g, Config) { Owner = System.Windows.Application.Current?.MainWindow };
+        Status = dlg.ShowDialog() == true && dlg.Applied ? $"Portada aplicada: {g.Name}" : $"Sin cambios de portada: {g.Name}";
     }
 
     private void DownloadCover(GameEntry g)
@@ -188,362 +287,421 @@ public class MainViewModel : INotifyPropertyChanged
         Status = $"Buscando portada: {g.Name}...";
         Task.Run(async () =>
         {
-            var ok = await CoverDownloadService.DownloadAsync(g, Config.SteamGridDbApiKey ?? "", Config, new Progress<string>(s => DispatcherInvoke(() => Status = s)));
-            DispatcherInvoke(() => Status = ok ? $"Portada encontrada: {g.Name}" : $"No se encontró portada para: {g.Name}");
+            var ok = await CoverDownloadService.DownloadAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = s)));
+            UiThread.Run(() => Status = ok ? $"Portada encontrada: {g.Name}" : $"No se encontró portada para {g.Name}. Prueba 🔎 para buscar a mano.");
         });
     }
 
-    private void DownloadAllCovers()
+    private void DownloadAllCovers(bool onlyQuiverIfNoKeys = false)
     {
-        var targets = AllGames.Where(g => g.CoverImage == null).ToList();
-        Status = $"Buscando portadas ({targets.Count})... (SGDB → RAWG/Libretro/IGDB → Quiver)";
+        var targets = AllGames.Where(g => !g.HasCover).ToList();
+        if (targets.Count == 0) { Status = "Todos los juegos tienen portada."; return; }
+        var anyKey = !string.IsNullOrWhiteSpace(Config.SteamGridDbApiKey) || !string.IsNullOrWhiteSpace(Config.RawgApiKey) ||
+                     !string.IsNullOrWhiteSpace(Config.IgdbClientId);
+        Status = $"Buscando {targets.Count} portadas...";
         Task.Run(async () =>
         {
-            var n = await CoverDownloadService.DownloadAllAsync(targets, Config.SteamGridDbApiKey ?? "", Config, new Progress<string>(s => DispatcherInvoke(() => Status = s)));
-            var withCover = AllGames.Count(g => g.CoverImage != null);
-            DispatcherInvoke(() => Status = $"Descarga terminada: {n} nuevas. Total con portada: {withCover}/{AllGames.Count}.");
-        });
-    }
-
-    private void RenameGame(GameEntry g)
-    {
-        var name = DialogService.Prompt("Cambiar nombre", "Nuevo nombre para el juego (deja vacío para restaurar el nombre automático):", g.Name, "Guardar");
-        if (name == null) return;
-        name = name.Trim();
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            Config.NameOverrides.Remove(g.FolderPath);
-            Status = $"Nombre restaurado: {Path.GetFileName(g.FolderPath)}";
-        }
-        else
-        {
-            Config.NameOverrides[g.FolderPath] = name;
-            Status = $"Nombre actualizado: {name}";
-        }
-        ConfigService.Save(Config);
-        Rescan();
-    }
-
-    private void HideGame(GameEntry g)
-    {
-        if (!Config.Hidden.Contains(g.FolderPath)) Config.Hidden.Add(g.FolderPath);
-        g.IsHidden = true;
-        if (Config.Favorites.Contains(g.FolderPath)) { Config.Favorites.Remove(g.FolderPath); g.Favorite = false; }
-        ConfigService.Save(Config);
-        RebuildSystems();
-        ApplyFilter();
-        Status = $"Juego ocultado: {g.Name}. Activa \"Mostrar ocultos\" para gestionarlo.";
-    }
-
-    private void UnhideGame(GameEntry g)
-    {
-        Config.Hidden.Remove(g.FolderPath);
-        g.IsHidden = false;
-        ConfigService.Save(Config);
-        ApplyFilter();
-        RebuildSystems();
-        Status = $"Juego restaurado: {g.Name}";
-    }
-
-    private void DeleteGame(GameEntry g)
-    {
-        if (!DialogService.Confirm("Eliminar juego", $"¿Eliminar permanentemente \"{g.Name}\" y toda su carpeta?\n\n{g.FolderPath}\n\nEsta acción no se puede deshacer.", "Eliminar", "Cancelar"))
-            return;
-        try
-        {
-            if (Directory.Exists(g.FolderPath))
-                Directory.Delete(g.FolderPath, true);
-            Config.Hidden.Remove(g.FolderPath);
-            Config.Favorites.Remove(g.FolderPath);
-            Config.LaunchOverrides.Remove(g.FolderPath);
-            Config.CoverOverrides.Remove(g.FolderPath);
-            Config.NameOverrides.Remove(g.FolderPath);
-            ConfigService.Save(Config);
-            AllGames.Remove(g);
-            RebuildSystems();
-            ApplyFilter();
-            Status = $"Juego eliminado: {g.Name}";
-        }
-        catch (Exception ex)
-        {
-            Status = $"No se pudo eliminar: {ex.Message}";
-        }
-    }
-
-    public void Rescan()
-    {
-        Status = "Escaneando...";
-        Task.Run(() =>
-        {
-            var scanned = ScannerService.Scan(Config.RootPath, Config);
-            DispatcherInvoke(() =>
+            int n;
+            var progress = new Progress<string>(s => UiThread.Run(() => Status = s));
+            if (onlyQuiverIfNoKeys && !anyKey)
             {
-                AllGames.Clear();
-                foreach (var g in scanned) AllGames.Add(g);
-                RebuildSystems();
-                ApplyFilter();
-                var qPath = QuiverIntegrationService.ResolveQuiverPath(Config);
-                Status = $"Cargados {AllGames.Count} juegos." + (string.IsNullOrEmpty(qPath) ? " (Quiver no detectado)" : " (Quiver sincronizado)");
-                OnPropertyChanged(nameof(UpdatesAvailableCount)); OnPropertyChanged(nameof(UpdatesLabel));
-                ConfigService.Save(Config);
-                if (!Config.AutoCoverAttempted)
-                {
-                    Config.AutoCoverAttempted = true;
-                    ConfigService.Save(Config);
-                    // primera vez: intentar completar portadas (SGDB primero si hay key; si no, probar alternativas/Quiver)
-                    var missing = AllGames.Where(g => g.CoverImage == null).ToList();
-                    if (missing.Count > 0 && !string.IsNullOrWhiteSpace(Config.SteamGridDbApiKey))
-                        DownloadAllCovers();
-                    else if (missing.Count > 0)
-                        _ = DownloadMissingCoversAsync(missing);
-                    Status = $"Cargados {AllGames.Count} juegos. Portadas: {AllGames.Count(g => g.CoverImage != null)}/{AllGames.Count}.";
-                }
-                if (Config.AutoCheckUpdates)
-                    CheckAllUpdates(silent: true);
+                n = 0;
+                foreach (var g in targets) if (await CoverDownloadService.TryQuiverAsync(g, Config)) n++;
+            }
+            else n = await CoverDownloadService.DownloadAllAsync(targets, Config, progress);
+            UiThread.Run(() =>
+            {
+                Status = $"Portadas: {n} nuevas · total {AllGames.Count(x => x.HasCover)}/{AllGames.Count}." +
+                         (anyKey ? "" : " Añade una API key de SteamGridDB (🔑SGDB) para encontrar más.");
+                if (Config.AutoCheckUpdates) CheckAllUpdates(silent: true);
             });
         });
     }
 
-    private async Task DownloadMissingCoversAsync(List<GameEntry> missing)
+    private void PromptKey(string title, string message, Func<AppConfig, string?> get, Action<AppConfig, string?> set)
     {
-        int n = 0;
-        foreach (var g in missing)
-        {
-            if (g.CoverImage != null) continue;
-            var ok = await CoverDownloadService.DownloadAsync(g, Config, new Progress<string>(s => DispatcherInvoke(() => Status = s)));
-            if (ok) n++;
-        }
-        if (n > 0) DispatcherInvoke(() => Status = $"Portadas aplicadas: {n}. Total: {AllGames.Count(x => x.CoverImage != null)}/{AllGames.Count}.");
+        var key = DialogService.Prompt(title, message, get(Config) ?? "");
+        if (key == null) return;
+        var v = string.IsNullOrWhiteSpace(key) ? null : key.Trim();
+        ConfigService.Update(Config, c => set(c, v));
+        Status = v == null ? $"{title}: borrada." : $"{title}: guardada.";
     }
 
-    private void SyncQuiver()
+    private void SetIgdb()
     {
-        var qPath = QuiverIntegrationService.ResolveQuiverPath(Config);
-        if (string.IsNullOrEmpty(qPath))
+        var id = DialogService.Prompt("IGDB (Twitch) Client ID", "Client ID de dev.twitch.tv/console/apps. Vacío para borrar.", Config.IgdbClientId ?? "");
+        if (id == null) return;
+        var secret = string.IsNullOrWhiteSpace(id) ? "" : DialogService.Prompt("IGDB (Twitch) Client Secret", "Client Secret de la misma aplicación de Twitch.", Config.IgdbClientSecret ?? "");
+        if (secret == null) return;
+        ConfigService.Update(Config, c =>
         {
-            // ask user to pick
-            var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "Selecciona la carpeta de QuiverLauncher (portable)" };
-            if (dlg.ShowDialog() == true && File.Exists(Path.Combine(dlg.FolderName, "apps.json")))
-            {
-                Config.QuiverPath = dlg.FolderName;
-                qPath = dlg.FolderName;
-                ConfigService.Save(Config);
-            }
-            else { Status = "No se encontró Quiver (apps.json)."; return; }
+            c.IgdbClientId = string.IsNullOrWhiteSpace(id) ? null : id.Trim();
+            c.IgdbClientSecret = string.IsNullOrWhiteSpace(secret) ? null : secret.Trim();
+        });
+        Status = Config.IgdbClientId != null ? "Credenciales de IGDB guardadas." : "Credenciales de IGDB borradas.";
+    }
+
+    private void RenameGame(GameEntry g)
+    {
+        var name = DialogService.Prompt("Cambiar nombre", "Nuevo nombre (vacío para volver al automático):", g.Name, "Guardar");
+        if (name == null) return;
+        name = name.Trim();
+        if (name.Length == 0)
+        {
+            ConfigService.Update(Config, c => c.NameOverrides.Remove(g.FolderPath));
+            Status = "Nombre restaurado; re-escaneando...";
+            Rescan();
+            return;
         }
-        Status = "Sincronizando con Quiver...";
+        ConfigService.Update(Config, c => c.NameOverrides[g.FolderPath] = name);
+        g.Name = name;
+        ApplyFilter();
+        Status = $"Nombre actualizado: {name}";
+    }
+
+    private void HideGame(GameEntry g)
+    {
+        g.IsHidden = true;
+        g.Favorite = false;
+        ConfigService.Update(Config, c =>
+        {
+            if (!c.Hidden.Contains(g.FolderPath, StringComparer.OrdinalIgnoreCase)) c.Hidden.Add(g.FolderPath);
+            c.Favorites.RemoveAll(f => string.Equals(f, g.FolderPath, StringComparison.OrdinalIgnoreCase));
+        });
+        RebuildSystems();
+        ApplyFilter();
+        Status = $"Ocultado: {g.Name}. Marca \"Mostrar ocultos\" para verlo.";
+    }
+
+    private void UnhideGame(GameEntry g)
+    {
+        g.IsHidden = false;
+        ConfigService.Update(Config, c => c.Hidden.RemoveAll(h => string.Equals(h, g.FolderPath, StringComparison.OrdinalIgnoreCase)));
+        RebuildSystems();
+        ApplyFilter();
+        Status = $"Restaurado: {g.Name}";
+    }
+
+    private void DeleteGame(GameEntry g)
+    {
+        // Protección: nunca la raíz, un sistema entero ni una ruta de primer nivel.
+        var full = PathUtil.Norm(g.FolderPath);
+        var root = PathUtil.Norm(Config.RootPath);
+        var depthOk = full.Count(c => c == '\\') >= 2;
+        var isSystemDir = PathUtil.IsSameOrInside(g.FolderPath, Config.RootPath) &&
+                          PathUtil.Norm(Path.GetDirectoryName(g.FolderPath) ?? "") == root;
+        if (!depthOk || full == root || isSystemDir || !Directory.Exists(g.FolderPath))
+        {
+            DialogService.Info("No se puede eliminar", $"Por seguridad no se elimina esta carpeta:\n{g.FolderPath}");
+            return;
+        }
+        if (!DialogService.Confirm("Eliminar juego",
+                $"¿Enviar \"{g.Name}\" y toda su carpeta a la Papelera de reciclaje?\n\n{g.FolderPath}" +
+                (g.IsExternal ? "\n\nEs una app de Quiver: quítala también de Quiver para que no la reinstale." : ""),
+                "Enviar a la papelera", "Cancelar"))
+            return;
+
+        Status = $"Eliminando {g.Name}...";
         Task.Run(() =>
         {
             try
             {
-                var apps = QuiverIntegrationService.LoadApps(qPath);
-                var versions = QuiverIntegrationService.LoadVersionCache(qPath);
-                var catalog = QuiverIntegrationService.LoadCatalogIndex(qPath);
-                int matched = 0, covers = 0;
-                DispatcherInvoke(() =>
+                Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(g.FolderPath,
+                    Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                    Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                ConfigService.Update(Config, c =>
                 {
-                    foreach (var g in AllGames)
-                    {
-                        var info = QuiverIntegrationService.Match(g, apps);
-                        if (info != null)
-                        {
-                            matched++;
-                            if (!Config.NameOverrides.ContainsKey(g.FolderPath) && !string.IsNullOrWhiteSpace(info.Name)) g.Name = info.Name;
-                            QuiverIntegrationService.Enrich(g, info, qPath);
-                        }
-                        else
-                        {
-                            var ce = QuiverIntegrationService.MatchCatalog(g, catalog);
-                            if (ce != null)
-                            {
-                                matched++;
-                                QuiverIntegrationService.EnrichFromCatalog(g, ce);
-                                if (!string.IsNullOrWhiteSpace(ce.FolderName))
-                                {
-                                    var icon = QuiverIntegrationService.FindLocalIcon(qPath, ce.FolderName, g.FolderPath);
-                                    if (!string.IsNullOrWhiteSpace(icon)) g.QuiverLocalIconPath = icon;
-                                }
-                            }
-                        }
-                        QuiverIntegrationService.ApplyUpdateInfo(g, versions);
-                    }
-                    ApplyFilter();
+                    c.Hidden.RemoveAll(h => string.Equals(h, g.FolderPath, StringComparison.OrdinalIgnoreCase));
+                    c.Favorites.RemoveAll(f => string.Equals(f, g.FolderPath, StringComparison.OrdinalIgnoreCase));
+                    c.LaunchOverrides.Remove(g.FolderPath);
+                    c.CoverOverrides.Remove(g.FolderPath);
+                    c.NameOverrides.Remove(g.FolderPath);
+                    c.LastPlayed.Remove(g.FolderPath);
                 });
-                foreach (var g in AllGames.ToList())
+                UiThread.Run(() =>
                 {
-                    if (g.CoverImage != null) continue;
-                    if (string.IsNullOrWhiteSpace(g.QuiverAppIconUrl) && string.IsNullOrWhiteSpace(g.QuiverLocalIconPath)) continue;
-                    var ok = CoverDownloadService.DownloadAsync(g, Config, null).GetAwaiter().GetResult();
-                    if (ok) covers++;
-                }
-                DispatcherInvoke(() => {
-                    OnPropertyChanged(nameof(UpdatesAvailableCount)); OnPropertyChanged(nameof(UpdatesLabel));
+                    AllGames.Remove(g);
+                    RebuildSystems();
                     ApplyFilter();
-                    Status = $"Quiver: {matched} juegos reconocidos (apps+catálogo), {covers} portadas importadas. Actualizaciones detectadas: {AllGames.Count(x => x.HasUpdate)}.";
+                    RaiseUpdateCounts();
+                    Status = $"Enviado a la papelera: {g.Name}";
                 });
             }
-            catch (Exception ex) { DispatcherInvoke(() => Status = "Error sincronizando Quiver: " + ex.Message); }
+            catch (OperationCanceledException) { UiThread.Run(() => Status = "Eliminación cancelada."); }
+            catch (Exception ex)
+            {
+                Log.Error($"No se pudo eliminar {g.FolderPath}", ex);
+                UiThread.Run(() => Status = $"No se pudo eliminar: {ex.Message}");
+            }
         });
     }
 
-    private void CheckAllUpdates(bool silent = false)
+    private void OpenRepository(GameEntry g)
     {
-        var qPath = QuiverIntegrationService.ResolveQuiverPath(Config) ?? "";
-        var targets = AllGames.Where(g => !string.IsNullOrWhiteSpace(g.Repository) || !string.IsNullOrWhiteSpace(qPath)).ToList();
+        if (string.IsNullOrWhiteSpace(g.Repository)) { Status = $"{g.Name} no está vinculado a ningún repositorio."; return; }
+        var host = g.Provider == "gitlab" ? "https://gitlab.com/" : "https://github.com/";
+        LauncherService.OpenUrl(host + g.Repository!.Trim('/') + "/releases");
+    }
+
+    // ------------------------------------------------------------------ Quiver
+
+    private void SyncQuiver()
+    {
+        var path = QuiverService.ResolvePath(Config);
+        if (path == null)
+        {
+            var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "Selecciona la carpeta de Quiver Launcher (la que contiene apps.json)" };
+            if (dlg.ShowDialog() != true) { Status = "Sincronización con Quiver cancelada."; return; }
+            var resolved = QuiverLibrary.ResolveRoot(dlg.FolderName);
+            if (resolved == null)
+            {
+                DialogService.Info("Quiver no encontrado", $"No hay apps.json en:\n{dlg.FolderName}\n\nElige la carpeta QuiverLauncher-win-Portable (o la de %LOCALAPPDATA%\\QuiverLauncher).");
+                return;
+            }
+            ConfigService.Update(Config, c => { c.QuiverPath = resolved; c.QuiverSyncEnabled = true; });
+        }
+        QuiverLibrary.InvalidateCache();
+        Status = "Sincronizando con Quiver...";
+        Rescan();
+        // tras el escaneo, completar portadas que solo existan en Quiver
+        var gen = _scanGeneration;
+        Task.Run(async () =>
+        {
+            while (IsBusy && gen == _scanGeneration) await Task.Delay(200);
+            if (gen != _scanGeneration) return;
+            var targets = AllGames.Where(g => !g.HasCover).ToList();
+            int n = 0;
+            foreach (var g in targets) if (await CoverDownloadService.TryQuiverAsync(g, Config)) n++;
+            var recognized = AllGames.Count(g => !string.IsNullOrWhiteSpace(g.Repository));
+            UiThread.Run(() => Status = $"Quiver: {recognized} juegos vinculados a un repositorio, {n} portadas importadas.");
+        });
+    }
+
+    // ------------------------------------------------------------------ actualizaciones
+
+    private void ToggleAutoUpdate()
+    {
+        ConfigService.Update(Config, c => c.AutoUpdateRecomps = !c.AutoUpdateRecomps);
+        OnPropertyChanged(nameof(AutoUpdateLabel));
+        Status = Config.AutoUpdateRecomps
+            ? "Auto-actualización ACTIVADA: se instalarán solas las actualizaciones con versión instalada conocida."
+            : "Auto-actualización DESACTIVADA.";
+    }
+
+    private void CheckAllUpdates(bool silent)
+    {
+        if (_checkingUpdates) { if (!silent) Status = "Ya se están comprobando actualizaciones..."; return; }
+        var targets = AllGames.Where(g => !string.IsNullOrWhiteSpace(g.Repository)).ToList();
+        if (targets.Count == 0)
+        {
+            if (!silent) Status = "Ningún juego está vinculado a un repositorio (sincroniza con Quiver).";
+            return;
+        }
+        _checkingUpdates = true;
         if (!silent) Status = $"Comprobando actualizaciones ({targets.Count})...";
         Task.Run(async () =>
         {
-            int checkedN = 0;
-            foreach (var g in targets)
+            Dictionary<CheckResult, int> counts;
+            try
             {
-                await UpdateService.CheckUpdateAsync(g, qPath);
-                checkedN++;
-                if (!silent && checkedN % 25 == 0) DispatcherInvoke(() => Status = $"Comprobando actualizaciones... {checkedN}/{targets.Count}");
+                var lib = QuiverService.Load(Config);
+                var progress = silent ? null : new Progress<(int done, int total)>(p => UiThread.Run(() => Status = $"Comprobando actualizaciones... {p.done}/{p.total}"));
+                counts = await UpdateService.CheckManyAsync(targets, lib, Config, force: !silent, progress);
             }
-            DispatcherInvoke(() =>
+            catch (Exception ex)
             {
-                OnPropertyChanged(nameof(UpdatesAvailableCount));
-                OnPropertyChanged(nameof(UpdatesLabel));
-                ApplyFilter();
-                var updates = AllGames.Count(x => x.HasUpdate);
-                var actionable = AllGames.Count(x => x.HasUpdate && !string.IsNullOrWhiteSpace(x.UpdateAssetUrl));
-                if (!silent || updates > 0)
-                    Status = updates > 0
-                        ? $"Actualizaciones disponibles: {updates} (instalables ahora: {actionable}). Auto-update: {(Config.AutoUpdateRecomps ? "ON" : "OFF")}."
-                        : "No hay actualizaciones disponibles.";
-                if (!silent && updates > 0)
+                Log.Error("Error comprobando actualizaciones", ex);
+                UiThread.Run(() => { _checkingUpdates = false; Status = "Error comprobando actualizaciones: " + ex.Message; });
+                return;
+            }
+            UiThread.Run(() =>
+            {
+                _checkingUpdates = false;
+                RaiseUpdateCounts();
+                if (SortMode == "Con actualización") ApplyFilter();
+                var updates = AllGames.Where(x => x.HasUpdate).ToList();
+                var installable = updates.Count(x => !string.IsNullOrWhiteSpace(x.UpdateAssetUrl));
+                var limited = counts.GetValueOrDefault(CheckResult.RateLimited);
+                var notFound = counts.GetValueOrDefault(CheckResult.NotFound);
+                var unknown = counts.GetValueOrDefault(CheckResult.LatestOnly);
+
+                var msg = updates.Count > 0 ? $"Actualizaciones: {updates.Count} (instalables: {installable})." : "Todo al día.";
+                if (unknown > 0) msg += $" {unknown} sin versión instalada conocida.";
+                if (notFound > 0) msg += $" {notFound} repos no encontrados.";
+                if (limited > 0) msg += $" Límite de GitHub alcanzado ({limited} sin comprobar, se reinicia a las {UpdateService.RateLimitResetLocal:HH:mm}); añade un token con 🔑GitHub.";
+                if (!silent || updates.Count > 0 || limited > 0) Status = msg;
+
+                if (!silent && updates.Count > 0)
                 {
-                    var sample = string.Join(", ", AllGames.Where(x => x.HasUpdate).Take(5).Select(x => $"{x.Name} ({x.LatestVersion})"));
-                    if (AllGames.Count(x => x.HasUpdate) > 5) sample += ", ...";
-                    DialogService.Info("Actualizaciones encontradas", $"Se han detectado {updates} recomps con actualización.\nInstalables automáticamente ahora: {actionable}.\n\n{sample}");
+                    var sample = string.Join("\n", updates.Take(12).Select(x => $"• {x.Name}: {x.InstalledVersion} → {x.LatestVersion}"));
+                    if (updates.Count > 12) sample += $"\n… y {updates.Count - 12} más";
+                    DialogService.Info("Actualizaciones encontradas", $"{sample}\n\nUsa ⟳ en cada tarjeta para actualizar." +
+                        (Config.AutoUpdateRecomps ? "" : "\nO activa Auto-update para hacerlo automáticamente."));
                 }
-                if (Config.AutoUpdateRecomps && actionable > 0) AutoUpdateAll();
+                if (Config.AutoUpdateRecomps && installable > 0) AutoUpdateAll();
             });
         });
     }
 
     private void CheckSingleUpdate(GameEntry g)
     {
-        var qPath = QuiverIntegrationService.ResolveQuiverPath(Config) ?? "";
-        Status = $"Comprobando actualización: {g.Name}...";
+        if (string.IsNullOrWhiteSpace(g.Repository)) { Status = $"{g.Name} no está vinculado a ningún repositorio de Quiver."; return; }
+        Status = $"Comprobando {g.Name}...";
         Task.Run(async () =>
         {
-            await UpdateService.CheckUpdateAsync(g, qPath);
-            DispatcherInvoke(() => Status = g.HasUpdate ? $"Actualización disponible: {g.Name} {g.InstalledVersion} → {g.LatestVersion}" : $"Sin actualización: {g.Name}");
+            var r = await UpdateService.CheckUpdateAsync(g, QuiverService.Load(Config), Config, force: true);
+            UiThread.Run(() =>
+            {
+                RaiseUpdateCounts();
+                Status = r switch
+                {
+                    CheckResult.UpdateAvailable => $"Actualización disponible: {g.Name} {g.InstalledVersion} → {g.LatestVersion}",
+                    CheckResult.LatestOnly => $"{g.Name}: última versión {g.LatestVersion}; la instalada es desconocida (pulsa ⟳ para instalar la última).",
+                    CheckResult.UpToDate => $"{g.Name} está al día ({g.InstalledVersion}).",
+                    CheckResult.NotFound => $"{g.Name}: el repositorio {g.Repository} no existe o no tiene releases.",
+                    CheckResult.RateLimited => $"Límite de la API de GitHub alcanzado hasta las {UpdateService.RateLimitResetLocal:HH:mm}. Añade un token con 🔑GitHub.",
+                    _ => $"No se pudo comprobar {g.Name} (ver registro)."
+                };
+            });
         });
     }
 
     private void UpdateSingleGame(GameEntry g)
     {
-        if (g.IsUpdating) { Status = $"Ya se está actualizando: {g.Name}"; return; }
-        // Always check/refresh so we have latest asset and clear feedback
-        if (string.IsNullOrWhiteSpace(g.UpdateAssetUrl) || string.IsNullOrWhiteSpace(g.Repository) == false)
-        {
-            // proceed to check then update attempt
-        }
-        var qPath = QuiverIntegrationService.ResolveQuiverPath(Config) ?? "";
-        Status = $"Preparando actualización: {g.Name}...";
+        if (g.IsUpdating) { Status = $"Ya se está actualizando {g.Name}."; return; }
+        if (string.IsNullOrWhiteSpace(g.Repository)) { Status = $"{g.Name} no está vinculado a ningún repositorio (sincroniza con Quiver)."; return; }
+        Status = $"Preparando actualización de {g.Name}...";
         Task.Run(async () =>
         {
-            await UpdateService.CheckUpdateAsync(g, qPath);
-            // try to resolve asset if update known
-            if (g.HasUpdate && string.IsNullOrWhiteSpace(g.UpdateAssetUrl) && !string.IsNullOrWhiteSpace(g.Repository))
+            var r = await UpdateService.CheckUpdateAsync(g, QuiverService.Load(Config), Config, force: true);
+            UiThread.Run(() =>
             {
-                // UpdateAsync will also try refresh, but set status
-            }
-            if (!g.HasUpdate)
-            {
-                DispatcherInvoke(() => { OnPropertyChanged(nameof(UpdatesAvailableCount)); OnPropertyChanged(nameof(UpdatesLabel)); Status = $"No hay actualización disponible para {g.Name}." + (string.IsNullOrWhiteSpace(g.Repository) ? " (no reconocido con repositorio de Quiver/catálogo)" : ""); });
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(g.UpdateAssetUrl) && string.IsNullOrWhiteSpace(g.Repository))
-            {
-                DispatcherInvoke(() => { Status = $"Actualización detectada para {g.Name} pero no hay repositorio/asset conocido para descargar."; });
-                return;
-            }
-
-            DispatcherInvoke(() => { g.IsUpdating = true; Status = $"Actualizando {g.Name} a {g.LatestVersion}..."; });
-            var ok = await UpdateService.UpdateAsync(g, new Progress<string>(s => DispatcherInvoke(() => Status = s)));
-            DispatcherInvoke(() =>
-            {
-                g.IsUpdating = false;
-                OnPropertyChanged(nameof(UpdatesAvailableCount)); OnPropertyChanged(nameof(UpdatesLabel));
-                ApplyFilter();
-                if (ok) Status = $"Actualizado: {g.Name} → {g.LatestVersion}";
+                RaiseUpdateCounts();
+                if (r == CheckResult.UpdateAvailable)
+                {
+                    StartUpdate(g);
+                }
+                else if (r == CheckResult.LatestOnly)
+                {
+                    if (DialogService.Confirm("Versión instalada desconocida",
+                            $"No se sabe qué versión de \"{g.Name}\" tienes instalada.\n\n¿Instalar la última ({g.LatestVersion}) encima?\nSe sobrescribirán los ficheros del juego; las partidas y ajustes que no vengan en el paquete se conservan.",
+                            "Instalar", "Cancelar"))
+                        StartUpdate(g);
+                    else Status = "Actualización cancelada.";
+                }
+                else if (r == CheckResult.UpToDate)
+                {
+                    Status = $"{g.Name} ya está en la última versión ({g.InstalledVersion}).";
+                }
                 else
                 {
-                    Status = $"No se pudo actualizar {g.Name}. " + (string.IsNullOrWhiteSpace(g.UpdateAssetUrl) ? "Sin asset de Windows descargable." : "Revisa el estado/log.");
-                    DialogService.Info("Actualización no completada", $"No se pudo actualizar \"{g.Name}\".\n\nRepositorio: {(string.IsNullOrWhiteSpace(g.Repository) ? "(no reconocido)" : g.Repository)}\nVersión detectada: {g.LatestVersion}\nAsset: {(string.IsNullOrWhiteSpace(g.UpdateAssetName) ? "(no encontrado)" : g.UpdateAssetName)}\n\nMotivos habituales: sin paquete de Windows en el release, límite de la API de GitHub (403), repositorio no disponible (404), o el paquete requiere instalación manual.\n\nLog: %TEMP%\\recompvault_updates.log");
+                    Status = r == CheckResult.RateLimited
+                        ? $"Límite de la API de GitHub alcanzado hasta las {UpdateService.RateLimitResetLocal:HH:mm}."
+                        : $"No se pudo consultar el repositorio de {g.Name}.";
                 }
+            });
+        });
+    }
+
+    private void StartUpdate(GameEntry g)
+    {
+        g.IsUpdating = true;
+        Status = $"Actualizando {g.Name} a {g.LatestVersion}...";
+        Task.Run(async () =>
+        {
+            var res = await UpdateService.UpdateAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = s)));
+            UiThread.Run(() =>
+            {
+                g.IsUpdating = false;
+                RaiseUpdateCounts();
+                Status = res.Message;
+                if (!res.Ok && !res.Manual)
+                    DialogService.Info("Actualización no completada", $"{g.Name}\n\n{res.Message}\n\nRepositorio: {g.Repository}\nPaquete: {g.UpdateAssetName ?? "(ninguno)"}\nRegistro: {Log.FilePath}");
             });
         });
     }
 
     private void AutoUpdateAll()
     {
+        if (_autoUpdating) return;
         var list = AllGames.Where(g => g.HasUpdate && !string.IsNullOrWhiteSpace(g.UpdateAssetUrl) && !g.IsUpdating).ToList();
-        if (list.Count == 0) { Status = "Hay actualizaciones detectadas, pero sin asset de Windows instalable automáticamente para esas entradas."; return; }
-        Status = $"Auto-actualizando {list.Count} recomps...";
+        if (list.Count == 0) return;
+        _autoUpdating = true;
         Task.Run(async () =>
         {
-            int okc = 0; int i = 0;
+            int ok = 0, i = 0;
+            var failed = new List<string>();
             foreach (var g in list)
             {
                 i++;
-                DispatcherInvoke(() => { g.IsUpdating = true; Status = $"Actualizando ({i}/{list.Count}): {g.Name} → {g.LatestVersion}..."; });
-                var ok = await UpdateService.UpdateAsync(g, new Progress<string>(s => DispatcherInvoke(() => Status = $"({i}/{list.Count}) {s}")));
-                if (ok) okc++;
-                DispatcherInvoke(() => g.IsUpdating = false);
+                var n = i;
+                UiThread.Run(() => { g.IsUpdating = true; Status = $"Auto-actualizando ({n}/{list.Count}) {g.Name}..."; });
+                var res = await UpdateService.UpdateAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = $"({n}/{list.Count}) {s}")));
+                if (res.Ok) ok++; else failed.Add($"• {g.Name}: {res.Message}");
+                UiThread.Run(() => g.IsUpdating = false);
             }
-            DispatcherInvoke(() =>
+            UiThread.Run(() =>
             {
-                OnPropertyChanged(nameof(UpdatesAvailableCount)); OnPropertyChanged(nameof(UpdatesLabel));
-                ApplyFilter();
-                Status = $"Auto-actualización completada: {okc}/{list.Count} recomps actualizadas.";
-                DialogService.Info("Auto-actualización", $"Se han actualizado {okc} de {list.Count} recomps.");
+                _autoUpdating = false;
+                RaiseUpdateCounts();
+                Status = $"Auto-actualización: {ok}/{list.Count} actualizados.";
+                if (failed.Count > 0) DialogService.Info("Auto-actualización", $"Actualizados {ok} de {list.Count}.\n\nFallidos:\n{string.Join("\n", failed.Take(10))}");
             });
         });
     }
 
-    private static void DispatcherInvoke(Action a)
+    private void RaiseUpdateCounts()
     {
-        var d = System.Windows.Application.Current?.Dispatcher;
-        if (d != null && !d.CheckAccess()) d.Invoke(a);
-        else a();
+        OnPropertyChanged(nameof(UpdatesAvailableCount));
+        OnPropertyChanged(nameof(UpdatesLabel));
     }
+
+    // ------------------------------------------------------------------ filtro
 
     private void RebuildSystems()
     {
         var current = _selectedSystem?.Name ?? "Todos";
-        Systems.Clear();
-        var visiblePool = AllGames.Where(g => ShowHidden || !g.IsHidden).ToList();
-        Systems.Add(SystemItem.FromName("Todos", visiblePool.Count));
-        foreach (var grp in visiblePool.GroupBy(g => g.System).OrderBy(g => g.Key))
+        var pool = AllGames.Where(g => ShowHidden || !g.IsHidden).ToList();
+        var items = new List<SystemItem> { SystemItem.FromName("Todos", pool.Count) };
+        foreach (var grp in pool.GroupBy(g => g.System, StringComparer.OrdinalIgnoreCase).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
             var item = SystemItem.FromName(grp.Key, grp.Count());
             SystemLogoService.Apply(item);
-            Systems.Add(item);
+            items.Add(item);
         }
-        var sel = Systems.FirstOrDefault(s => s.Name == current) ?? Systems.FirstOrDefault();
-        if (sel != null) SelectedSystem = sel;
+        _rebuildingSystems = true;
+        try { Systems.ReplaceAll(items); }
+        finally { _rebuildingSystems = false; }
+        _selectedSystem = Systems.FirstOrDefault(s => s.Name == current) ?? Systems[0];
+        OnPropertyChanged(nameof(SelectedSystem));
     }
 
     public void ApplyFilter()
     {
-        VisibleGames.Clear();
-        foreach (var g in AllGames)
+        IEnumerable<GameEntry> q = AllGames;
+        if (!ShowHidden) q = q.Where(g => !g.IsHidden);
+        if (FavoritesOnly) q = q.Where(g => g.Favorite);
+        var sys = SelectedSystem?.Name;
+        if (!string.IsNullOrEmpty(sys) && sys != "Todos") q = q.Where(g => string.Equals(g.System, sys, StringComparison.OrdinalIgnoreCase));
+        var search = Search?.Trim();
+        if (!string.IsNullOrEmpty(search))
         {
-            if (!ShowHidden && g.IsHidden) continue;
-            if (FavoritesOnly && !g.Favorite) continue;
-            if (SelectedSystem != null && SelectedSystem.Name != "Todos" && g.System != SelectedSystem.Name) continue;
-            if (!string.IsNullOrWhiteSpace(Search))
-            {
-                var q = Search.ToLowerInvariant();
-                if (!(g.Name.ToLowerInvariant().Contains(q) || g.System.ToLowerInvariant().Contains(q) || g.FolderPath.ToLowerInvariant().Contains(q) || (g.RecompName ?? "").ToLowerInvariant().Contains(q)))
-                    continue;
-            }
-            VisibleGames.Add(g);
+            var terms = search.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            q = q.Where(g => terms.All(t =>
+                g.Name.Contains(t, StringComparison.OrdinalIgnoreCase) ||
+                g.System.Contains(t, StringComparison.OrdinalIgnoreCase) ||
+                (g.RecompName ?? "").Contains(t, StringComparison.OrdinalIgnoreCase) ||
+                (g.Repository ?? "").Contains(t, StringComparison.OrdinalIgnoreCase) ||
+                g.FolderPath.Contains(t, StringComparison.OrdinalIgnoreCase)));
         }
+        q = SortMode switch
+        {
+            "Nombre" => q.OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase),
+            "Jugados recientemente" => q.OrderByDescending(g => g.LastPlayed).ThenBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase),
+            "Con actualización" => q.OrderByDescending(g => g.HasUpdate).ThenBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase),
+            _ => q.OrderBy(g => g.System, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase),
+        };
+        VisibleGames.ReplaceAll(q.ToList());
         OnPropertyChanged(nameof(HasNoVisibleGames));
     }
 

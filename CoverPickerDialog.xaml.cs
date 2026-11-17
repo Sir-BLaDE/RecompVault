@@ -24,8 +24,8 @@ public partial class CoverPickerDialog : Window
         public string? ThumbUrl { get; set; }
         public string Source { get; set; } = "";
         public string Title { get; set; } = "";
-        private BitmapImage? _thumb;
-        public BitmapImage? ThumbImage { get => _thumb; set { _thumb = value; OnPropertyChanged(); } }
+        private System.Windows.Media.ImageSource? _thumb;
+        public System.Windows.Media.ImageSource? ThumbImage { get => _thumb; set { _thumb = value; OnPropertyChanged(); } }
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
     }
@@ -43,7 +43,8 @@ public partial class CoverPickerDialog : Window
         HeaderText.Text = $"Elegir portada online: {game.Name}";
         QueryBox.Text = game.Name;
         SourceInitialized += (_, _) => TryEnableDarkTitleBar();
-        Loaded += async (_, _) => { QueryBox.Focus(); await SearchAsync(); };
+        QueryBox.KeyDown += async (_, e) => { if (e.Key == Key.Enter) await SearchAsync(); };
+        Loaded += async (_, _) => { SelectInitialSource(); QueryBox.Focus(); QueryBox.SelectAll(); await SearchAsync(); };
     }
 
     private void TryEnableDarkTitleBar()
@@ -58,7 +59,19 @@ public partial class CoverPickerDialog : Window
         catch { }
     }
 
+    private CancellationTokenSource? _searchCts;
+
     private async void Search_Click(object sender, RoutedEventArgs e) => await SearchAsync();
+
+    /// <summary>Elige como origen inicial el primero que tenga credenciales (Quiver/Libretro no necesitan).</summary>
+    private void SelectInitialSource()
+    {
+        foreach (var item in SourceBox.Items.OfType<ComboBoxItem>())
+        {
+            var tag = item.Tag?.ToString() ?? "";
+            if (CoverDownloadService.MissingCredentials(tag, _cfg) == null) { SourceBox.SelectedItem = item; return; }
+        }
+    }
 
     private async Task SearchAsync()
     {
@@ -66,21 +79,34 @@ public partial class CoverPickerDialog : Window
         var query = QueryBox.Text?.Trim();
         if (string.IsNullOrWhiteSpace(query)) query = _game.Name;
         Results.Clear();
-        StatusText.Text = $"Buscando en {source}...";
+
+        var missing = CoverDownloadService.MissingCredentials(source, _cfg);
+        if (missing != null)
+        {
+            StatusText.Text = missing;
+            StatusText.Visibility = Visibility.Visible;
+            return;
+        }
+
+        _searchCts?.Cancel();
+        var cts = _searchCts = new CancellationTokenSource();
+        StatusText.Text = $"Buscando en {(SourceBox.SelectedItem as ComboBoxItem)?.Content}...";
         StatusText.Visibility = Visibility.Visible;
         SearchBtn.IsEnabled = false;
         try
         {
-            var found = await CoverDownloadService.SearchAsync(source, query, _game, _cfg);
+            var found = await CoverDownloadService.SearchAsync(source, query, _game, _cfg, cts.Token);
+            if (cts.IsCancellationRequested) return;
             foreach (var c in found)
             {
                 var item = new CandidateItem { Url = c.Url, ThumbUrl = c.ThumbUrl, Source = c.Source, Title = c.Title };
                 Results.Add(item);
-                _ = LoadThumbAsync(item);
+                _ = LoadThumbAsync(item, cts.Token);
             }
-            StatusText.Text = Results.Count == 0 ? "No se encontraron resultados. Prueba otro origen o búsqueda." : "";
+            StatusText.Text = Results.Count == 0 ? "Sin resultados. Prueba otro origen o cambia la búsqueda." : "";
             StatusText.Visibility = Results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             StatusText.Text = "Error al buscar: " + ex.Message;
@@ -89,102 +115,51 @@ public partial class CoverPickerDialog : Window
         finally { SearchBtn.IsEnabled = true; }
     }
 
-    private static async Task LoadThumbAsync(CandidateItem item)
+    private static readonly SemaphoreSlim ThumbGate = new(6);
+
+    private static async Task LoadThumbAsync(CandidateItem item, CancellationToken ct)
     {
+        await ThumbGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             var src = item.ThumbUrl ?? item.Url;
-            BitmapImage bmp;
-            if (File.Exists(src))
-            {
-                var bytes = await File.ReadAllBytesAsync(src);
-                bmp = LoadBitmap(bytes);
-            }
-            else
-            {
-                using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-                try { http.DefaultRequestHeaders.UserAgent.ParseAdd("RecompVault/1.0"); } catch { }
-                var bytes = await http.GetByteArrayAsync(src);
-                bmp = LoadBitmap(bytes);
-            }
-            bmp.Freeze();
-            var d = Application.Current?.Dispatcher;
-            if (d != null && !d.CheckAccess()) d.Invoke(() => item.ThumbImage = bmp);
-            else item.ThumbImage = bmp;
+            var bytes = File.Exists(src)
+                ? await File.ReadAllBytesAsync(src, ct).ConfigureAwait(false)
+                : await CoverDownloadService.Http.GetByteArrayAsync(src, ct).ConfigureAwait(false);
+            var bmp = ImageLoader.Load(bytes, 300);
+            if (bmp != null) UiThread.Run(() => item.ThumbImage = bmp);
         }
         catch { }
-    }
-
-    private static BitmapImage LoadBitmap(byte[] bytes)
-    {
-        var ms = new MemoryStream(bytes);
-        var bmp = new BitmapImage();
-        bmp.BeginInit();
-        bmp.CacheOption = BitmapCacheOption.OnLoad;
-        bmp.StreamSource = ms;
-        bmp.DecodePixelWidth = 300; // thumbnail
-        bmp.EndInit();
-        return bmp;
+        finally { ThumbGate.Release(); }
     }
 
     private async void Item_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.Tag is not CandidateItem item) return;
-        StatusText.Text = "Aplicando portada seleccionada...";
+        StatusText.Text = "Aplicando portada...";
         StatusText.Visibility = Visibility.Visible;
         SearchBtn.IsEnabled = false;
         try
         {
-            bool ok;
-            if (File.Exists(item.Url))
-            {
-                // copy local file as cover
-                var tag = "onlinepick_" + DateTime.Now.Ticks;
-                var cfg = _cfg;
-                // reuse SaveLocal via ApplyFromUrl not possible for local path format differences; do inline
-                ok = await Task.Run(async () =>
-                {
-                    try
-                    {
-                        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RecompVault", "covers");
-                        Directory.CreateDirectory(dir);
-                        var ext = Path.GetExtension(item.Url); if (string.IsNullOrWhiteSpace(ext)) ext = ".png";
-                        var dest = Path.Combine(dir, tag + ext);
-                        var bytes = await File.ReadAllBytesAsync(item.Url);
-                        await File.WriteAllBytesAsync(dest, bytes);
-                        cfg.CoverOverrides[_game.FolderPath] = dest;
-                        ConfigService.Save(cfg);
-                        // apply
-                        var bmp = new BitmapImage();
-                        bmp.BeginInit(); bmp.UriSource = new Uri(dest, UriKind.Absolute); bmp.CacheOption = BitmapCacheOption.OnLoad; bmp.EndInit(); bmp.Freeze();
-                        var d = Application.Current?.Dispatcher;
-                        if (d != null && !d.CheckAccess()) d.Invoke(() => _game.CoverImage = bmp); else _game.CoverImage = bmp;
-                        return true;
-                    }
-                    catch { return false; }
-                });
-            }
-            else
-            {
-                ok = await CoverDownloadService.ApplyFromUrlAsync(_game, item.Url, _cfg, "onlinepick");
-            }
-
+            var ok = File.Exists(item.Url)
+                ? await CoverDownloadService.ApplyFromFileAsync(_game, item.Url, _cfg)
+                : await CoverDownloadService.ApplyFromUrlAsync(_game, item.Url, _cfg, "manual");
             if (ok)
             {
                 Applied = true;
                 DialogResult = true;
                 Close();
             }
-            else
-            {
-                StatusText.Text = "No se pudo descargar/aplicar la portada seleccionada.";
-            }
+            else StatusText.Text = "No se pudo descargar o leer esa imagen. Prueba otra.";
         }
-        catch (Exception ex)
-        {
-            StatusText.Text = "Error: " + ex.Message;
-        }
+        catch (Exception ex) { StatusText.Text = "Error: " + ex.Message; }
         finally { SearchBtn.IsEnabled = true; }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _searchCts?.Cancel();
+        base.OnClosed(e);
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)

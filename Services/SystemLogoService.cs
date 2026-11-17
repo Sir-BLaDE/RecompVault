@@ -11,7 +11,10 @@ namespace RecompVault.Services;
 public static class SystemLogoService
 {
     private static readonly HttpClient Http = Create();
-    private static readonly string CacheDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RecompVault", "system_logos");
+    private static readonly string CacheDir = Path.Combine(ConfigService.Dir, "system_logos");
+    /// <summary>Sistemas ya intentados en esta sesión (evita repetir descargas fallidas en cada filtro).</summary>
+    private static readonly HashSet<string> Attempted = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, ImageSource> Loaded = new(StringComparer.OrdinalIgnoreCase);
 
     // Curated: prefer official wordmark/logos (con letras). Using Commons redirect for reliable thumbnails.
     private static readonly Dictionary<string, string[]> LogoSources = new(StringComparer.OrdinalIgnoreCase)
@@ -50,13 +53,24 @@ public static class SystemLogoService
     public static void Apply(SystemItem item)
     {
         if (item.Name == "Todos") { item.HasLogo = false; return; }
+        lock (Loaded)
+        {
+            if (Loaded.TryGetValue(item.Name, out var cached)) { Set(item, cached); return; }
+            if (!LogoSources.ContainsKey(item.Name) || !Attempted.Add(item.Name))
+            {
+                var p = Path.Combine(CacheDir, Sanitize(item.Name) + ".png");
+                if (!File.Exists(p)) return;
+            }
+        }
         try
         {
             Directory.CreateDirectory(CacheDir);
             var path = Path.Combine(CacheDir, Sanitize(item.Name) + ".png");
             if (File.Exists(path))
             {
-                Set(item, Load(path));
+                var img = Load(path);
+                if (img != null) lock (Loaded) Loaded[item.Name] = img;
+                Set(item, img);
                 return;
             }
             // try download async in background, keep fallback badge meanwhile
@@ -67,9 +81,11 @@ public static class SystemLogoService
                     var url = await ResolveUrlAsync(item.Name);
                     if (string.IsNullOrEmpty(url)) return;
                     var bytes = await Http.GetByteArrayAsync(url);
-                    if (bytes == null || bytes.Length < 200) return;
+                    if (bytes == null || bytes.Length < 200 || !ImageLoader.LooksLikeImage(bytes)) return;
                     await File.WriteAllBytesAsync(path, bytes);
-                    Set(item, Load(path));
+                    var img = Load(path);
+                    if (img != null) lock (Loaded) Loaded[item.Name] = img;
+                    Set(item, img);
                 }
                 catch { }
             });
@@ -105,27 +121,12 @@ public static class SystemLogoService
         return null;
     }
 
-    private static ImageSource? Load(string path)
-    {
-        try
-        {
-            var bmp = new BitmapImage();
-            bmp.BeginInit();
-            bmp.UriSource = new Uri(path, UriKind.Absolute);
-            bmp.CacheOption = BitmapCacheOption.OnLoad;
-            bmp.EndInit();
-            bmp.Freeze();
-            return bmp;
-        }
-        catch { return null; }
-    }
+    private static ImageSource? Load(string path) => ImageLoader.Load(path, 96);
 
     private static void Set(SystemItem item, ImageSource? img)
     {
         if (img == null) return;
-        var d = Application.Current?.Dispatcher;
-        if (d != null && !d.CheckAccess()) d.Invoke(() => { item.LogoImage = img; item.HasLogo = true; });
-        else { item.LogoImage = img; item.HasLogo = true; }
+        UiThread.Run(() => { item.LogoImage = img; item.HasLogo = true; });
     }
 
     private static string Sanitize(string s)
