@@ -176,6 +176,10 @@ Check("mapper Switch 2", SystemMapper.Suggest(new[] { "Nintendo Switch 2" }) == 
 Check("mapper Xbox 360", SystemMapper.Suggest(new[] { "Xbox 360" }) == "X360" && SystemMapper.Suggest(new[] { "Xbox" }) == "XBOX");
 Check("mapper respeta carpeta existente", SystemMapper.Suggest(new[] { "Sega Genesis" }, new[] { "MegaDrive" }) == "MegaDrive");
 Check("mapper desconocido", SystemMapper.Suggest(new[] { "Virtual Boy" }) == null);
+Check("título núcleo quita plataforma y versión", QuiverMatcher.CoreTitle("SuperMetroidSNESRecomp-windows-x64-v0.3.0") == "supermetroid");
+Check("título núcleo conserva números", QuiverMatcher.CoreTitle("Ridge_Racer_4_Recomp_Windows") != QuiverMatcher.CoreTitle("Ridge Racer"));
+Check("título núcleo: colección no es el juego", QuiverMatcher.CoreTitle("Ridge Racer Collection") != QuiverMatcher.CoreTitle("Ridge Racer"));
+Check("título núcleo iguala nombres equivalentes", QuiverMatcher.CoreTitle("Super Mario World") == QuiverMatcher.CoreTitle("SuperMarioWorldRecomp-windows-x64-v0.9.5"));
 
 // ---------------------------------------------------------------- ficheros protegidos
 Check("glob *.ini en subcarpeta", GlobMatcher.IsMatch(@"cfg\game.ini", "*.ini"));

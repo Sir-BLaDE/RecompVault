@@ -534,7 +534,7 @@ public class MainViewModel : INotifyPropertyChanged
             if (!string.IsNullOrWhiteSpace(g.Repository))
                 await UpdateService.CheckUpdateAsync(g, lib, Config, force: true);
             else
-                UiThread.RunSync(() => g.InstalledVersion = UpdateService.ReadInstalledVersion(g.FolderPath) ?? "");
+                UiThread.RunSync(() => g.InstalledVersion = UpdateService.ReadInstalledVersion(g.UpdateDir) ?? "");
             ArtworkService.Apply(g, Config);
             UiThread.Run(() =>
             {
@@ -548,7 +548,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     public void UndoUpdate(GameEntry g)
     {
-        var m = UndoStore.Latest(g.FolderPath);
+        var m = UndoStore.Latest(g.UpdateDir);
         if (m == null) { Status = $"{g.Name}: no hay ninguna actualización que deshacer."; g.HasUndo = false; return; }
         if (!DialogService.Confirm("Deshacer actualización",
                 $"¿Deshacer la actualización de \"{g.Name}\" del {m.CreatedUtc.ToLocalTime():dd/MM/yyyy HH:mm}?\n\n" +

@@ -58,7 +58,7 @@ public static class FingerprintService
         if (candidates.Count == 0)
             return new FingerprintResult(false, "", null, null, null, "No hay ningún repositorio con el que comparar (vincúlalo en ℹ o sincroniza con Quiver).");
 
-        var sha = InstalledSha(g.FolderPath);
+        var sha = InstalledSha(g.UpdateDir);
         string? exe = !string.IsNullOrWhiteSpace(g.LaunchPath) && File.Exists(g.LaunchPath) && PathUtil.IsSameOrInside(g.LaunchPath, g.FolderPath) ? g.LaunchPath : null;
         uint exeCrc = 0; long exeSize = 0;
         if (exe != null)
@@ -201,10 +201,10 @@ public static class FingerprintService
         });
         try
         {
-            if (!string.IsNullOrWhiteSpace(r.Version) && !VersionUtil.Equivalent(UpdateService.ReadInstalledVersion(g.FolderPath), r.Version))
-                File.WriteAllText(Path.Combine(g.FolderPath, "version.txt"), r.Version);
+            if (!string.IsNullOrWhiteSpace(r.Version) && !VersionUtil.Equivalent(UpdateService.ReadInstalledVersion(g.UpdateDir), r.Version))
+                File.WriteAllText(Path.Combine(g.UpdateDir, "version.txt"), r.Version);
         }
-        catch (Exception ex) { Log.Warn($"Huella: no se pudo escribir version.txt en {g.FolderPath}: {ex.Message}"); }
+        catch (Exception ex) { Log.Warn($"Huella: no se pudo escribir version.txt en {g.UpdateDir}: {ex.Message}"); }
         Log.Info($"Huella verificada {g.Name}: {r.Message}");
     }
 }

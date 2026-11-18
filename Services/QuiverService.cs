@@ -37,6 +37,15 @@ public static class QuiverService
             g.QuiverAppIconUrl = string.IsNullOrWhiteSpace(app.AppIconUrl) ? null : app.AppIconUrl;
             if (!string.IsNullOrWhiteSpace(app.CustomIconPath) && File.Exists(app.CustomIconPath)) g.QuiverLocalIconPath = app.CustomIconPath;
             if (!string.IsNullOrWhiteSpace(app.Project)) g.Project = app.Project;
+            // instalada en una subcarpeta: las actualizaciones van a esa subcarpeta
+            g.InstallDir = app.InstallPath.Length > 0 && PathUtil.Norm(app.InstallPath) != PathUtil.Norm(g.FolderPath) &&
+                           PathUtil.IsSameOrInside(app.InstallPath, g.FolderPath) && Directory.Exists(app.InstallPath)
+                ? app.InstallPath.TrimEnd('\\', '/') : null;
+            if (g.InstallDir != null)
+            {
+                var v = UpdateService.ReadInstalledVersion(g.InstallDir);
+                if (!string.IsNullOrWhiteSpace(v)) g.InstalledVersion = v;
+            }
         }
         else if (m.Catalog != null)
         {
@@ -52,7 +61,7 @@ public static class QuiverService
     public static void Unlink(GameEntry g)
     {
         g.Repository = null; g.Provider = "github"; g.AssetFilter = null; g.Project = null;
-        g.QuiverFolderName = null; g.QuiverAppIconUrl = null; g.QuiverLocalIconPath = null;
+        g.QuiverFolderName = null; g.QuiverAppIconUrl = null; g.QuiverLocalIconPath = null; g.InstallDir = null;
         g.UpdateAssetUrl = null; g.UpdateAssetName = null; g.UpdateAssetDigest = null;
         g.LatestVersion = "";
     }
