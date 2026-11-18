@@ -123,3 +123,7 @@ dotnet run --project tests/CoreTests       # pruebas del núcleo (funcionan tamb
 
 GitHub Actions compila en cada push y publica `RecompVault.exe` como artefacto (necesita
 .NET 10 Desktop Runtime).
+
+**Publicar una versión:** sube `<Version>` en `RecompVault.csproj` (p. ej. `2.0.1`) y llévalo a
+`main`. El workflow `release` crea la etiqueta `v2.0.1` y la release con el `.exe` si aún no
+existe. También funciona subiendo a mano una etiqueta `vX.Y.Z`.
