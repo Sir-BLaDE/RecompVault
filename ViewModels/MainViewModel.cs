@@ -157,6 +157,13 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Tiles de sistema compactos (caben más a la vista).</summary>
+    public bool CompactSystems
+    {
+        get => Config.CompactSystems;
+        set { if (Config.CompactSystems == value) return; ConfigService.Update(Config, c => c.CompactSystems = value); OnPropertyChanged(); }
+    }
+
     private bool _favoritesOnly;
     public bool FavoritesOnly { get => _favoritesOnly; set { _favoritesOnly = value; OnPropertyChanged(); ApplyFilter(); } }
 
