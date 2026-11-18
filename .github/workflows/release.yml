@@ -1,31 +1,65 @@
 name: release
 
-# Al subir una etiqueta vX.Y.Z se compila y se publica RecompVault.exe en GitHub Releases.
+# Publica RecompVault.exe en GitHub Releases. Dos formas de lanzarlo:
+#  1) Automática: al llegar a main un cambio de <Version> en RecompVault.csproj,
+#     si todavía no existe la etiqueta vX.Y.Z se crea junto con la release.
+#  2) Manual: subir una etiqueta vX.Y.Z.
 # RecompVault avisa en la barra superior cuando hay una versión más nueva que la suya.
 on:
   push:
+    branches: [main]
+    paths: ["RecompVault.csproj", ".github/workflows/release.yml"]
     tags: ["v*"]
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "10.0.x"
-      - name: Versión desde la etiqueta
+          fetch-depth: 0
+      - name: Determinar versión
+        id: ver
         shell: pwsh
         run: |
-          $v = "${{ github.ref_name }}".TrimStart('v')
-          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $v = "${{ github.ref_name }}".TrimStart('v')
+          } else {
+            [xml]$p = Get-Content RecompVault.csproj
+            $v = ($p.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+            if (-not $v) { throw "No hay <Version> en RecompVault.csproj" }
+          }
+          $tag = "v$v"
+          $exists = $false
+          if ("${{ github.ref_type }}" -ne "tag") {
+            git ls-remote --exit-code --tags origin "refs/tags/$tag" | Out-Null
+            $exists = ($LASTEXITCODE -eq 0)
+            $global:LASTEXITCODE = 0
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "skip=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          if ($exists) { Write-Host "La etiqueta $tag ya existe: no se publica nada." } else { Write-Host "Se publicará $tag" }
+      - uses: actions/setup-dotnet@v4
+        if: steps.ver.outputs.skip != 'true'
+        with:
+          dotnet-version: "10.0.x"
       - name: Publicar
-        run: dotnet publish RecompVault.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ env.VERSION }} -o publish
+        if: steps.ver.outputs.skip != 'true'
+        run: dotnet publish RecompVault.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ steps.ver.outputs.version }} -o publish
       - name: Crear release
+        if: steps.ver.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: RecompVault ${{ steps.ver.outputs.version }}
           files: publish/RecompVault.exe
           generate_release_notes: true
