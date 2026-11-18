@@ -29,11 +29,13 @@ public partial class SettingsDialog : Window
         lock (ConfigService.Sync)
         {
             RootBox.Text = cfg.RootPath;
+            AppVersionText.Text = $"Versión instalada: {SelfUpdateService.CurrentVersion}";
             QuiverEnabledBox.IsChecked = cfg.QuiverSyncEnabled;
             QuiverBox.Text = cfg.QuiverPath;
             ExternalBox.IsChecked = cfg.IncludeQuiverAppsOutsideRoot;
             FuzzyBox.IsChecked = cfg.FuzzyQuiverMatching;
             AutoCheckBox.IsChecked = cfg.AutoCheckUpdates;
+            CheckAppBox.IsChecked = cfg.CheckAppUpdates;
             AutoUpdateBox.IsChecked = cfg.AutoUpdateRecomps;
             PreBox.IsChecked = cfg.IncludePrereleases;
             ChangelogBox.IsChecked = cfg.ConfirmUpdatesWithChangelog;
@@ -109,6 +111,7 @@ public partial class SettingsDialog : Window
             c.IncludeQuiverAppsOutsideRoot = ExternalBox.IsChecked == true;
             c.FuzzyQuiverMatching = FuzzyBox.IsChecked == true;
             c.AutoCheckUpdates = AutoCheckBox.IsChecked == true;
+            c.CheckAppUpdates = CheckAppBox.IsChecked == true;
             c.AutoUpdateRecomps = AutoUpdateBox.IsChecked == true;
             c.IncludePrereleases = PreBox.IsChecked == true;
             c.ConfirmUpdatesWithChangelog = ChangelogBox.IsChecked == true;
@@ -123,5 +126,16 @@ public partial class SettingsDialog : Window
         });
         if (NeedsRescan) QuiverLibrary.InvalidateCache();
         DialogResult = true;
+    }
+
+    private async void CheckApp_Click(object sender, RoutedEventArgs e)
+    {
+        AppVersionText.Text = "Consultando GitHub...";
+        var r = await SelfUpdateService.LatestAsync(string.IsNullOrWhiteSpace(GitHubBox.Text) ? null : GitHubBox.Text);
+        AppVersionText.Text = $"Versión instalada: {SelfUpdateService.CurrentVersion}";
+        if (r == null) { DialogService.Info("Actualización de RecompVault", $"No se pudo consultar GitHub. Puedes mirar a mano en:\n{SelfUpdateService.ReleasesUrl}"); return; }
+        if (!r.IsNewer) { AppVersionText.Text += " · es la última"; return; }
+        AppVersionText.Text += $" · disponible {r.Tag}";
+        SelfUpdateService.Prompt(r, _cfg, manual: true);
     }
 }

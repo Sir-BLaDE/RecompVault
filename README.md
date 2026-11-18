@@ -125,6 +125,10 @@ dotnet run --project tests/CoreTests       # pruebas del núcleo (funcionan tamb
 GitHub Actions compila en cada push y publica `RecompVault.exe` como artefacto (necesita
 .NET 10 Desktop Runtime).
 
+**Actualizar RecompVault:** al arrancar y cada 6 horas consulta el último release de GitHub. Si hay uno nuevo,
+avisa con las notas del release y el botón **Abrir GitHub** lleva a la página de descarga (no se actualiza solo).
+**Omitir esta versión** deja de avisar con diálogo hasta la siguiente. Se puede desactivar o comprobar a mano en ⚙ Ajustes → RecompVault.
+
 **Publicar una versión:** sube `<Version>` en `RecompVault.csproj` (p. ej. `2.0.1`) y llévalo a
 `main`. El workflow `release` crea la etiqueta `v2.0.1` y la release con el `.exe` si aún no
 existe. También funciona subiendo a mano una etiqueta `vX.Y.Z`.

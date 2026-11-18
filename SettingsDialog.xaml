@@ -58,6 +58,13 @@
                 <CheckBox x:Name="ExternalBox" Content="Mostrar también las apps de Quiver instaladas fuera de la carpeta raíz"/>
                 <CheckBox x:Name="FuzzyBox" Content="Vincular también por coincidencia aproximada (puede equivocarse; si no, aparecen como sugerencia en ℹ)"/>
 
+                <TextBlock Text="RECOMPVAULT" Style="{StaticResource Sec}"/>
+                <DockPanel Margin="0,2,0,4">
+                    <Button DockPanel.Dock="Right" Content="Buscar versión nueva" Style="{StaticResource GhostButton}" Padding="12,5" Click="CheckApp_Click"/>
+                    <TextBlock x:Name="AppVersionText" VerticalAlignment="Center"/>
+                </DockPanel>
+                <CheckBox x:Name="CheckAppBox" Content="Avisar cuando haya una versión nueva de RecompVault (abre GitHub; no se actualiza solo)"/>
+
                 <TextBlock Text="ACTUALIZACIONES" Style="{StaticResource Sec}"/>
                 <CheckBox x:Name="AutoCheckBox" Content="Comprobar actualizaciones al arrancar"/>
                 <CheckBox x:Name="AutoUpdateBox" Content="Instalar actualizaciones automáticamente (solo vínculos seguros, nunca aproximados)"/>

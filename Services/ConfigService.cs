@@ -21,6 +21,10 @@ public class AppConfig
     public double WindowHeight { get; set; } = 800;
     public bool WindowMaximized { get; set; }
     public bool CompactSystems { get; set; }
+    /// <summary>Comprobar al arrancar (y cada 6 h) si hay una versión nueva de RecompVault en GitHub.</summary>
+    public bool CheckAppUpdates { get; set; } = true;
+    /// <summary>Versión de RecompVault que el usuario decidió omitir (no se vuelve a avisar con diálogo).</summary>
+    public string? SkippedAppVersion { get; set; }
 
     // Integración con Quiver
     public string QuiverPath { get; set; } = "";           // vacío = autodetectar
