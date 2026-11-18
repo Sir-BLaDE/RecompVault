@@ -10,8 +10,9 @@ Estilo frontend de emulación: carrusel de sistemas con sus colores de marca y e
 cabecera del sistema elegido (logo grande, fabricante, año, número de juegos y actualizaciones) y
 cuadrícula de portadas virtualizada (solo se dibuja lo visible, así va fluido con cientos de juegos).
 
-- **Teclado:** flechas para moverse, Intro para jugar, RePág/AvPág para cambiar de sistema, Ctrl+F para buscar y F11 para el modo sofá.
-- **Mando XInput:** cruceta o stick para moverse, A jugar, Y favorito, X detección, LB/RB sistema, B limpiar la búsqueda y Start para el modo sofá. Solo responde con RecompVault en primer plano.
+- **Carrusel de sistemas:** flechas ◀ ▶ a los lados (clic derecho: ir al principio/final), barra de posición arrastrable, rueda del ratón con desplazamiento suave y el sistema elegido se centra solo. **▦ N sistemas** abre una cuadrícula con todos y un buscador (escribe, flechas e Intro). **▭ compacto** reduce los tiles para ver más a la vez.
+- **Teclado:** flechas para moverse, Intro para jugar, RePág/AvPág para cambiar de sistema, S para la cuadrícula de sistemas, Ctrl+F para buscar y F11 para el modo sofá.
+- **Mando XInput:** cruceta o stick para moverse, A jugar, Y favorito, X detección, LB/RB sistema, Back cuadrícula de sistemas, B limpiar la búsqueda y Start para el modo sofá. Solo responde con RecompVault en primer plano.
 - **Modo sofá:** pantalla completa ampliada y con la interfaz simplificada.
 - **Logos propios:** pon `<SISTEMA>.png` en `%APPDATA%\RecompVault\system_logos_custom` (mejor con fondo transparente, para que se pinte en blanco).
 

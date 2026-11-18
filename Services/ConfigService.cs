@@ -20,6 +20,7 @@ public class AppConfig
     public double WindowWidth { get; set; } = 1280;
     public double WindowHeight { get; set; } = 800;
     public bool WindowMaximized { get; set; }
+    public bool CompactSystems { get; set; }
 
     // Integración con Quiver
     public string QuiverPath { get; set; } = "";           // vacío = autodetectar
