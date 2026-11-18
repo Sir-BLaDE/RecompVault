@@ -139,6 +139,13 @@ public class GameEntry : INotifyPropertyChanged
     public string Provider { get; set; } = "github";
     public string? Project { get; set; }
     public string? QuiverFolderName { get; set; }
+
+    /// <summary>
+    /// Carpeta real de la instalación cuando Quiver la tiene en una subcarpeta (Juego\Juego-v1.0).
+    /// Las actualizaciones, version.txt y las copias de deshacer van ahí, no a la carpeta contenedora.
+    /// </summary>
+    public string? InstallDir { get; set; }
+    public string UpdateDir => !string.IsNullOrEmpty(InstallDir) && Directory.Exists(InstallDir) ? InstallDir : FolderPath;
     public string? QuiverAppIconUrl { get; set; }
     public string? QuiverLocalIconPath { get; set; }
     /// <summary>releaseAssetFilter de Quiver (repos con varios juegos).</summary>

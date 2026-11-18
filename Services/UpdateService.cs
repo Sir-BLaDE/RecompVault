@@ -369,8 +369,8 @@ public static class UpdateService
     {
         try
         {
-            var installed = ReadInstalledVersion(g.FolderPath) ?? "";
-            g.InstalledAssetName = ReadInstalledAssetName(g.FolderPath);
+            var installed = ReadInstalledVersion(g.UpdateDir) ?? "";
+            g.InstalledAssetName = ReadInstalledAssetName(g.UpdateDir);
             UiThread.RunSync(() => g.InstalledVersion = installed);
             QuiverService.ApplyKnownLatest(g, lib);
 
@@ -444,7 +444,7 @@ public static class UpdateService
         if (choice == null && string.IsNullOrWhiteSpace(g.UpdateAssetUrl))
             return new UpdateOutcome(false, "El release no tiene un paquete de Windows descargable.");
 
-        var running = RunningProcessesIn(g.FolderPath);
+        var running = RunningProcessesIn(g.UpdateDir);
         if (running.Count > 0)
             return new UpdateOutcome(false, $"Cierra el juego antes de actualizar ({string.Join(", ", running)}).");
 
@@ -497,18 +497,18 @@ public static class UpdateService
             if (ReleaseAssetPicker.IsInstaller(name))
             {
                 // Un instalador no se puede aplicar en silencio: se deja en la carpeta y se abre.
-                var dest = Path.Combine(g.FolderPath, name);
+                var dest = Path.Combine(g.UpdateDir, name);
                 File.Copy(downloadPath, dest, true);
-                try { Process.Start(new ProcessStartInfo { FileName = dest, WorkingDirectory = g.FolderPath, UseShellExecute = true }); } catch { }
+                try { Process.Start(new ProcessStartInfo { FileName = dest, WorkingDirectory = g.UpdateDir, UseShellExecute = true }); } catch { }
                 return new UpdateOutcome(false, $"Es un instalador ({name}); se ha abierto para que lo completes. La versión se marcará cuando vuelvas a comprobar.", Manual: true);
             }
 
             // A partir de aquí todo lo que se toca queda en la copia de deshacer; si algo falla se revierte.
-            undo = UndoSession.Begin(g.FolderPath, g.Name, g.InstalledVersion, version, name);
+            undo = UndoSession.Begin(g.UpdateDir, g.Name, g.InstalledVersion, version, name);
             if (lower.EndsWith(".exe"))
             {
                 undo.BeforeWrite(name);
-                File.Copy(downloadPath, Path.Combine(g.FolderPath, name), true);
+                File.Copy(downloadPath, Path.Combine(g.UpdateDir, name), true);
             }
             else
             {
@@ -516,7 +516,7 @@ public static class UpdateService
                 Directory.CreateDirectory(extractDir);
                 var extracted = await ExtractAsync(downloadPath, lower, extractDir, ct).ConfigureAwait(false);
                 if (extracted != null) { undo.Rollback(); return new UpdateOutcome(false, extracted); }
-                var copyErr = ApplyExtracted(g.FolderPath, extractDir, undo, ProtectedPatternsFor(g, cfg), out kept);
+                var copyErr = ApplyExtracted(g.UpdateDir, extractDir, undo, ProtectedPatternsFor(g, cfg), out kept);
                 if (copyErr != null)
                 {
                     var rb = undo.Rollback();
@@ -528,14 +528,14 @@ public static class UpdateService
             {
                 // Mismos ficheros y formato que Quiver, para que ambos launchers vean la misma versión instalada.
                 undo.BeforeWrite("version.txt");
-                File.WriteAllText(Path.Combine(g.FolderPath, "version.txt"), version);
+                File.WriteAllText(Path.Combine(g.UpdateDir, "version.txt"), version);
                 undo.BeforeWrite("installed-build.txt");
-                File.WriteAllText(Path.Combine(g.FolderPath, "installed-build.txt"), $"{name}\n{sha}\n");
+                File.WriteAllText(Path.Combine(g.UpdateDir, "installed-build.txt"), $"{name}\n{sha}\n");
             }
             undo.Commit(Math.Max(1, cfg.UndoBackupsToKeep));
             g.InstalledAssetName = name;
 
-            var launch = ScannerService.ResolveLaunch(g.FolderPath, Path.GetFileName(g.FolderPath), cfg);
+            var launch = ScannerService.ResolveLaunch(g.UpdateDir, Path.GetFileName(g.UpdateDir), cfg);
             UiThread.RunSync(() =>
             {
                 g.InstalledVersion = version;
@@ -748,17 +748,17 @@ public static class UpdateService
     /// <summary>Deshace la última actualización hecha por RecompVault en esta carpeta.</summary>
     public static UpdateOutcome UndoLastUpdate(GameEntry g, AppConfig cfg)
     {
-        var running = RunningProcessesIn(g.FolderPath);
+        var running = RunningProcessesIn(g.UpdateDir);
         if (running.Count > 0) return new UpdateOutcome(false, $"Cierra el juego antes de deshacer ({string.Join(", ", running)}).");
-        var m = UndoStore.Latest(g.FolderPath);
+        var m = UndoStore.Latest(g.UpdateDir);
         if (m == null) return new UpdateOutcome(false, "No hay ninguna actualización que deshacer en esta carpeta.");
-        var err = UndoStore.RestoreLatest(g.FolderPath);
+        var err = UndoStore.RestoreLatest(g.UpdateDir);
         if (err != null) return new UpdateOutcome(false, err);
 
-        var installed = ReadInstalledVersion(g.FolderPath) ?? "";
-        var assetName = ReadInstalledAssetName(g.FolderPath);
-        var launch = ScannerService.ResolveLaunch(g.FolderPath, Path.GetFileName(g.FolderPath), cfg);
-        var hasMore = UndoStore.Latest(g.FolderPath) != null;
+        var installed = ReadInstalledVersion(g.UpdateDir) ?? "";
+        var assetName = ReadInstalledAssetName(g.UpdateDir);
+        var launch = ScannerService.ResolveLaunch(g.UpdateDir, Path.GetFileName(g.UpdateDir), cfg);
+        var hasMore = UndoStore.Latest(g.UpdateDir) != null;
         UiThread.RunSync(() =>
         {
             g.InstalledVersion = installed;

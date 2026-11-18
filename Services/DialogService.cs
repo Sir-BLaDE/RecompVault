@@ -136,6 +136,59 @@ public static class DialogService
         return res == true;
     }
 
+    /// <summary>Mensaje con varios botones (el primero es el principal). Devuelve el índice pulsado o -1 si se cierra.</summary>
+    public static int Choose(string title, string message, string? details, params string[] options)
+    {
+        var d = Application.Current?.Dispatcher;
+        if (d != null && !d.CheckAccess()) return d.Invoke(() => Choose(title, message, details, options));
+        var w = new Window
+        {
+            Title = title,
+            Width = 600,
+            SizeToContent = SizeToContent.Height,
+            MinHeight = 150,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = FindOwner(),
+            ResizeMode = ResizeMode.NoResize,
+            Background = Brush("BgBrush", "#0F1115"),
+            Foreground = Brush("TextBrush", "#E6E8EE"),
+            WindowStyle = WindowStyle.ToolWindow
+        };
+        if (w.Owner == null) w.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        ApplyDarkTitle(w);
+
+        var root = new Border { Padding = new Thickness(16), Background = Brush("BgBrush", "#0F1115") };
+        var sp = new StackPanel();
+        sp.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10), Foreground = Brush("TextBrush", "#E6E8EE") });
+        if (!string.IsNullOrWhiteSpace(details))
+        {
+            var box = new TextBox
+            {
+                Text = details, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 280, Padding = new Thickness(8),
+                Margin = new Thickness(0, 0, 0, 14), FontFamily = new FontFamily("Consolas"), FontSize = 12,
+                Background = Brush("PanelBrush", "#1A1F2B"), Foreground = Brush("TextBrush", "#E6E8EE"), BorderThickness = new Thickness(0)
+            };
+            sp.Children.Add(box);
+        }
+        var btns = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        int res = -1;
+        for (int i = 0; i < options.Length; i++)
+        {
+            var idx = i;
+            var b = new Button { Content = options[i], MinWidth = 90, Margin = new Thickness(i == options.Length - 1 ? 0 : 0, 0, i == options.Length - 1 ? 0 : 8, 0), IsDefault = i == 0 };
+            var key = i == 0 ? "PrimaryButton" : "GhostButton";
+            if (Application.Current?.TryFindResource(key) is Style st) b.Style = st;
+            b.Click += (_, _) => { res = idx; w.Close(); };
+            btns.Children.Add(b);
+        }
+        sp.Children.Add(btns);
+        root.Child = sp;
+        w.Content = root;
+        w.ShowDialog();
+        return res;
+    }
+
     public static void Info(string title, string message, string okText = "Aceptar")
     {
         var d = Application.Current?.Dispatcher;

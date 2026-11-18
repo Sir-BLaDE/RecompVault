@@ -135,22 +135,48 @@ public static class SelfUpdateService
 
     public static string CurrentVersion => typeof(SelfUpdateService).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
-    /// <summary>(tag, url) del release más nuevo si es posterior a la versión actual.</summary>
-    public static async Task<(string tag, string url)?> CheckAsync()
+    public static string ReleasesUrl => $"https://github.com/{Repo}/releases";
+
+    public sealed record AppRelease(string Tag, string Url, string Notes, DateTime? Published, bool IsNewer);
+
+    /// <summary>Último release publicado en GitHub (null si no hay red o falla la API).</summary>
+    public static async Task<AppRelease?> LatestAsync(string? token = null)
     {
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("RecompVault/" + CurrentVersion);
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            if (!string.IsNullOrWhiteSpace(token)) http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token.Trim());
             using var resp = await http.GetAsync($"https://api.github.com/repos/{Repo}/releases/latest");
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode) { Log.Warn($"Actualización de RecompVault: GitHub respondió {(int)resp.StatusCode}"); return null; }
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
             var tag = doc.RootElement.Str("tag_name");
-            var url = doc.RootElement.Str("html_url") ?? $"https://github.com/{Repo}/releases";
-            if (tag != null && VersionUtil.IsNewer(tag, CurrentVersion)) return (tag, url);
+            if (tag == null) return null;
+            var url = doc.RootElement.Str("html_url") ?? ReleasesUrl;
+            var notes = doc.RootElement.Str("body") ?? "";
+            DateTime? pub = DateTime.TryParse(doc.RootElement.Str("published_at"), out var p) ? p.ToLocalTime() : null;
+            return new AppRelease(tag, url, notes, pub, VersionUtil.IsNewer(tag, CurrentVersion));
         }
-        catch { }
-        return null;
+        catch (Exception ex) { Log.Warn($"Actualización de RecompVault: {ex.Message}"); return null; }
+    }
+
+    /// <summary>
+    /// Avisa de la versión nueva y, si el usuario quiere, abre la página del release en GitHub.
+    /// No descarga ni sustituye nada: la actualización la hace el usuario.
+    /// </summary>
+    /// <returns>true si se abrió GitHub.</returns>
+    public static bool Prompt(AppRelease r, AppConfig cfg, bool manual)
+    {
+        var notes = r.Notes.Length > 4000 ? r.Notes[..4000] + "\n…" : r.Notes;
+        var when = r.Published is { } d ? $" (publicada el {d:dd/MM/yyyy})" : "";
+        var msg = $"Hay una versión nueva de RecompVault: {r.Tag}{when}.\nTienes la {CurrentVersion}.\n\n" +
+                  "Se abrirá la página del release en GitHub para que descargues RecompVault.exe y sustituyas el actual " +
+                  "(cierra RecompVault antes de reemplazarlo). Tus ajustes están en %APPDATA%\\RecompVault y no se pierden.";
+        var options = manual ? new[] { "Abrir GitHub", "Ahora no" } : new[] { "Abrir GitHub", "Más tarde", "Omitir esta versión" };
+        var choice = DialogService.Choose("Actualización de RecompVault", msg, string.IsNullOrWhiteSpace(notes) ? null : notes, options);
+        if (choice == 0) { LauncherService.OpenUrl(r.Url); return true; }
+        if (choice == 2) ConfigService.Update(cfg, c => c.SkippedAppVersion = r.Tag);
+        return false;
     }
 }

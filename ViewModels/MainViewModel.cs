@@ -282,7 +282,11 @@ public class MainViewModel : INotifyPropertyChanged
         });
         AddToSteamCommand = new RelayCommand(o => { if (o is GameEntry g) AddToSteam(g); });
         VerifyFingerprintCommand = new RelayCommand(o => { if (o is GameEntry g) VerifyMany(new[] { g }, interactive: true); });
-        OpenSelfUpdateCommand = new RelayCommand(_ => { if (_selfUpdateUrl != null) LauncherService.OpenUrl(_selfUpdateUrl); });
+        OpenSelfUpdateCommand = new RelayCommand(_ =>
+        {
+            if (_selfUpdateRelease != null) SelfUpdateService.Prompt(_selfUpdateRelease, Config, manual: true);
+            else if (_selfUpdateUrl != null) LauncherService.OpenUrl(_selfUpdateUrl);
+        });
         UndoManagerCommand = new RelayCommand(_ => { var d = new UndoManagerDialog(this) { Owner = ActiveOwner() }; d.ShowDialog(); });
         SettingsCommand = new RelayCommand(_ => OpenSettings());
         RescanCommand = new RelayCommand(_ => Rescan());
@@ -534,7 +538,7 @@ public class MainViewModel : INotifyPropertyChanged
             if (!string.IsNullOrWhiteSpace(g.Repository))
                 await UpdateService.CheckUpdateAsync(g, lib, Config, force: true);
             else
-                UiThread.RunSync(() => g.InstalledVersion = UpdateService.ReadInstalledVersion(g.FolderPath) ?? "");
+                UiThread.RunSync(() => g.InstalledVersion = UpdateService.ReadInstalledVersion(g.UpdateDir) ?? "");
             ArtworkService.Apply(g, Config);
             UiThread.Run(() =>
             {
@@ -548,7 +552,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     public void UndoUpdate(GameEntry g)
     {
-        var m = UndoStore.Latest(g.FolderPath);
+        var m = UndoStore.Latest(g.UpdateDir);
         if (m == null) { Status = $"{g.Name}: no hay ninguna actualización que deshacer."; g.HasUndo = false; return; }
         if (!DialogService.Confirm("Deshacer actualización",
                 $"¿Deshacer la actualización de \"{g.Name}\" del {m.CreatedUtc.ToLocalTime():dd/MM/yyyy HH:mm}?\n\n" +
@@ -631,22 +635,58 @@ public class MainViewModel : INotifyPropertyChanged
                 {
                     CheckAllUpdates(silent: true);
                 }
-                if (afterStartup && Config.AutoCheckUpdates)
-                {
-                    Task.Run(async () =>
-                    {
-                        var upd = await SelfUpdateService.CheckAsync();
-                        if (upd == null) return;
-                        UiThread.Run(() =>
-                        {
-                            _selfUpdateUrl = upd.Value.url;
-                            SelfUpdateLabel = $"⬆ RecompVault {upd.Value.tag}";
-                        });
-                    });
-                }
+                if (afterStartup) StartAppUpdateChecks();
             });
         }, cts.Token);
     }
+
+    // ------------------------------------------------------------------ actualización de RecompVault
+
+    private System.Windows.Threading.DispatcherTimer? _appUpdateTimer;
+    private string? _appUpdatePromptedTag;
+
+    /// <summary>Comprueba al arrancar y cada 6 horas mientras RecompVault esté abierto.</summary>
+    private void StartAppUpdateChecks()
+    {
+        if (_appUpdateTimer != null) return;
+        _appUpdateTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromHours(6) };
+        _appUpdateTimer.Tick += (_, _) => CheckAppUpdate(manual: false);
+        _appUpdateTimer.Start();
+        // un poco después de arrancar, para no tapar el primer escaneo
+        var once = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        once.Tick += (_, _) => { once.Stop(); CheckAppUpdate(manual: false); };
+        once.Start();
+    }
+
+    public async void CheckAppUpdate(bool manual)
+    {
+        if (!manual && !Config.CheckAppUpdates) return;
+        var r = await SelfUpdateService.LatestAsync(Config.GitHubToken);
+        if (r == null)
+        {
+            if (manual) DialogService.Info("Actualización de RecompVault", $"No se pudo consultar GitHub. Puedes mirar a mano en:\n{SelfUpdateService.ReleasesUrl}");
+            return;
+        }
+        if (!r.IsNewer)
+        {
+            SelfUpdateLabel = "";
+            if (manual) DialogService.Info("Actualización de RecompVault", $"Tienes la última versión ({SelfUpdateService.CurrentVersion}).");
+            return;
+        }
+        _selfUpdateUrl = r.Url;
+        _selfUpdateRelease = r;
+        SelfUpdateLabel = $"⬆ RecompVault {r.Tag}";
+        Status = $"Hay una versión nueva de RecompVault: {r.Tag} (tienes la {SelfUpdateService.CurrentVersion}).";
+        // diálogo: siempre si es manual; si es automático, una vez por sesión y no si se omitió esa versión
+        var skipped = !manual && string.Equals(Config.SkippedAppVersion, r.Tag, StringComparison.OrdinalIgnoreCase);
+        if (manual || (!skipped && _appUpdatePromptedTag != r.Tag && !IsCouchMode))
+        {
+            _appUpdatePromptedTag = r.Tag;
+            SelfUpdateService.Prompt(r, Config, manual);
+        }
+    }
+
+    private SelfUpdateService.AppRelease? _selfUpdateRelease;
 
     // ------------------------------------------------------------------ acciones por juego
 

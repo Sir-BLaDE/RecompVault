@@ -84,11 +84,18 @@ public static class QuiverMatcher
     /// <summary>Pruebas que no dependen de palabras sueltas ("super", "mario"...).</summary>
     private static bool StrongEvidence(string folderName, FolderHints hints, QuiverApp c)
     {
-        var folderNorm = PathUtil.NormName(folderName);
-        foreach (var cand in new[] { c.FolderName, c.Name, c.Project })
+        // Nombre: solo cuenta si el título es el mismo, quitando versión, plataforma y palabras de relleno.
+        // Un prefijo no basta: "Ridge Racer 4" / "Ridge Racer Collection" no son "Ridge Racer", ni
+        // "SuperMetroidSNESRecomp" es "SuperMetroidPlus".
+        var folderCore = CoreTitle(folderName);
+        if (folderCore.Length >= 5 && new[] { c.FolderName, c.Name, c.Project }.Any(cand => CoreTitle(cand) == folderCore))
         {
-            var n = PathUtil.NormName(cand);
-            if (n.Length >= 6 && folderNorm.Length >= 6 && (folderNorm == n || folderNorm.StartsWith(n) || n.StartsWith(folderNorm))) return true;
+            // mismo juego, pero el repositorio es una variante concreta ("Super-Mario-World-Remastered-Plus" para una
+            // carpeta "SuperMarioWorldRecomp"): eso no es prueba de que sea ese proyecto
+            var repoName = c.Repository.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
+            var repoCore = CoreTitle(repoName);
+            bool variant = repoCore.Length >= 5 && repoCore != folderCore && !folderCore.Contains(repoCore) && repoCore.Contains(folderCore);
+            if (!variant) return true;
         }
         if (!string.IsNullOrWhiteSpace(c.Repository))
         {
@@ -99,6 +106,25 @@ public static class QuiverMatcher
             if (hints.TextBlob.Contains("github.com/" + lower) || hints.TextBlob.Contains("gitlab.com/" + lower)) return true;
         }
         return false;
+    }
+
+    private static readonly HashSet<string> PlatformTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "snes","sfc","nes","n64","gba","gbc","gb","nds","ds","3ds","gc","gcn","gamecube","wii","wiiu","switch","nsw",
+        "psx","ps1","ps2","ps3","ps4","psp","vita","x360","xbox","xbox360","xbla","dc","dreamcast","saturn","genesis",
+        "megadrive","md","pce","arcade","naomi","cps2","cps1","dos"
+    };
+
+    /// <summary>Título normalizado sin versión, plataforma ni relleno: "SuperMetroidSNESRecomp-windows-x64-v0.3.0" → "supermetroid".</summary>
+    internal static string CoreTitle(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "";
+        // CleanTitle ya separa CamelCase y números y quita versiones; aquí se conservan los números ("Ridge Racer 4")
+        var title = System.Text.RegularExpressions.Regex.Replace(LaunchPicker.CleanTitle(s), "(?<=[A-Z])(?=[A-Z][a-z])", " "); // "SNESRecomp" → "SNES Recomp"
+        var clean = new string(title.Select(ch => char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : ' ').ToArray());
+        var words = clean.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => !GenericTokens.Contains(t) && !PlatformTokens.Contains(t));
+        return PathUtil.NormName(string.Join("", words));
     }
 
     // ------------------------------------------------------------------ pistas de carpeta (cacheadas)
