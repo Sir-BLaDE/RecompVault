@@ -27,7 +27,7 @@ public static class VersionUtil
     public static string Normalize(string? version)
     {
         if (string.IsNullOrWhiteSpace(version)) return "0.0.0";
-        var normalized = StripBuild(version.Trim().TrimStart('v', 'V'));
+        var normalized = StripBuild(StripPrefix(version.Trim()).TrimStart('v', 'V'));
         var labelAt = normalized.IndexOfAny(new[] { '-', ' ', '\t' });
         if (labelAt >= 0) normalized = normalized[..labelAt];
 
@@ -75,10 +75,19 @@ public static class VersionUtil
         if (i == null || l == null) return false;
         if (Equivalent(i, l)) return false;
         if (IsNewer(i, l)) return false;
+        // la instalada tiene número y la publicada no (p.ej. "windows-v1.9.8.6" frente a "linux-seamless-beta.1"):
+        // no se puede afirmar que sea más nueva
+        if (Normalize(l) == "0.0.0" && Normalize(i) != "0.0.0") return false;
         return true;
     }
 
     private static string StripBuild(string v) { var p = v.IndexOf('+'); return p >= 0 ? v[..p] : v; }
-    private static string Identity(string v) => StripBuild(v.Trim().TrimStart('v', 'V'));
+    private static string Identity(string v) => StripBuild(StripPrefix(v.Trim()).TrimStart('v', 'V'));
+
+    private static readonly System.Text.RegularExpressions.Regex PrefixRx =
+        new(@"^[A-Za-z][A-Za-z0-9]*?[-_ ]+(?=[vV]?\d)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>Quita prefijos de plataforma o canal delante del número: "windows-v3.2.1" → "v3.2.1", "release_1.4" → "1.4".</summary>
+    public static string StripPrefix(string v) => PrefixRx.Replace(v, "", 1);
     private static bool HasLabel(string v) => Identity(v).IndexOfAny(new[] { '-', ' ', '\t' }) >= 0;
 }
