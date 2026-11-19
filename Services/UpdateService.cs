@@ -319,7 +319,12 @@ public static class UpdateService
             if (r.TryGet("draft", out var d) && d.ValueKind == JsonValueKind.True) continue;
             var pre = r.TryGet("prerelease", out var p) && p.ValueKind == JsonValueKind.True;
             firstAny ??= r;
-            if (!pre || includePre) { pick = r; break; }
+            if (pre && !includePre) continue;
+            // releases solo para otra plataforma (AppImage de Linux, .dmg...) no cuentan como "la última" para Windows
+            var assets = r.Arr("assets").Select(a => new ReleaseAsset(a.Str("name") ?? "", a.Str("browser_download_url") ?? "", null, 0))
+                          .Where(a => a.Name.Length > 0).ToList();
+            if (assets.Count > 0 && ReleaseAssetPicker.Pick(assets) == null) continue;
+            pick = r; break;
         }
         var chosen = pick ?? firstAny;
         if (chosen == null) return null;
