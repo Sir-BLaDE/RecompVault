@@ -289,7 +289,7 @@ public class MainViewModel : INotifyPropertyChanged
         });
         UndoManagerCommand = new RelayCommand(_ => { var d = new UndoManagerDialog(this) { Owner = ActiveOwner() }; d.ShowDialog(); });
         SettingsCommand = new RelayCommand(_ => OpenSettings());
-        RescanCommand = new RelayCommand(_ => Rescan());
+        RescanCommand = new RelayCommand(_ => Rescan(full: Keyboard.Modifiers.HasFlag(ModifierKeys.Control)));
     }
 
     private void Repair(GameEntry g)
@@ -582,25 +582,49 @@ public class MainViewModel : INotifyPropertyChanged
 
     // ------------------------------------------------------------------ escaneo
 
-    public void Rescan(bool afterStartup = false)
+    /// <summary>
+    /// Arranque: muestra al instante la biblioteca guardada en caché, carga sus portadas en segundo plano
+    /// y después escanea solo para corregir lo que haya cambiado (juegos nuevos, borrados o actualizados).
+    /// </summary>
+    public void Startup()
+    {
+        var cached = LibraryCacheService.Load(Config.RootPath, Config);
+        if (cached.Count == 0) { Rescan(afterStartup: true); return; }
+
+        AllGames.ReplaceAll(cached.OrderBy(g => g.System, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase));
+        RebuildSystems();
+        ApplyFilter();
+        RaiseUpdateCounts();
+        Status = $"{AllGames.Count} juegos (última sesión) · comprobando cambios...";
+        Rescan(afterStartup: true, artworkFirst: cached);
+    }
+
+    /// <param name="full">Escaneo desde cero: no reutiliza nada del escaneo anterior (Ctrl+F5).</param>
+    public void Rescan(bool afterStartup = false, bool full = false, IReadOnlyList<GameEntry>? artworkFirst = null)
     {
         _scanCts?.Cancel();
         var cts = _scanCts = new CancellationTokenSource();
         var gen = Interlocked.Increment(ref _scanGeneration);
         IsBusy = true;
-        Status = "Escaneando biblioteca...";
+        if (artworkFirst == null) Status = full ? "Escaneando biblioteca desde cero..." : "Comprobando cambios en la biblioteca...";
         var root = Config.RootPath;
+        // instantánea de lo que hay ahora para reutilizar carpetas sin cambios
+        var previous = full ? null : AllGames.GroupBy(g => PathUtil.Norm(g.FolderPath)).ToDictionary(x => x.Key, x => x.First());
 
-        Task.Run(() =>
+        Task.Run(async () =>
         {
             QuiverLibrary? lib = null;
             List<GameEntry> scanned;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                QuiverMatcher.ClearCache();
+                if (artworkFirst != null) await LibraryCacheService.LoadArtworkAsync(artworkFirst, Config, cts.Token);
+                if (cts.IsCancellationRequested) return;
+                if (full) QuiverMatcher.ClearCache();
                 lib = QuiverService.Load(Config);
-                scanned = ScannerService.Scan(root, Config, lib);
+                scanned = ScannerService.Scan(root, Config, lib, previous);
                 foreach (var g in scanned) QuiverService.ApplyKnownLatest(g, lib);
+                Log.Info($"Escaneo {(full ? "completo" : "incremental")}: {scanned.Count} juegos en {sw.ElapsedMilliseconds} ms");
             }
             catch (Exception ex)
             {
@@ -613,7 +637,7 @@ public class MainViewModel : INotifyPropertyChanged
             UiThread.Run(() =>
             {
                 if (gen != _scanGeneration) return;
-                AllGames.ReplaceAll(scanned);
+                var (added, removed) = MergeScan(scanned);
                 IsBusy = false;
                 RebuildSystems();
                 ApplyFilter();
@@ -621,7 +645,8 @@ public class MainViewModel : INotifyPropertyChanged
 
                 var withCover = AllGames.Count(g => g.HasCover);
                 var external = AllGames.Count(g => g.IsExternal);
-                Status = $"{AllGames.Count} juegos" + (external > 0 ? $" ({external} de Quiver fuera de la raíz)" : "") +
+                var changes = added + removed > 0 ? $" · {added} nuevos, {removed} quitados" : "";
+                Status = $"{AllGames.Count} juegos{changes}" + (external > 0 ? $" ({external} de Quiver fuera de la raíz)" : "") +
                          $" · portadas {withCover}/{AllGames.Count} · " +
                          (lib == null ? "Quiver no detectado" : $"Quiver: {lib.Apps.Count} apps");
                 if (!Directory.Exists(root)) Status = $"La carpeta raíz no existe: {root}. Pulsa ⚙ para elegirla.";
@@ -636,8 +661,47 @@ public class MainViewModel : INotifyPropertyChanged
                     CheckAllUpdates(silent: true);
                 }
                 if (afterStartup) StartAppUpdateChecks();
+                SaveLibraryCache();
             });
         }, cts.Token);
+    }
+
+    /// <summary>
+    /// Integra un escaneo nuevo sin rehacer la lista: los juegos que siguen se actualizan en su sitio
+    /// (misma tarjeta, misma selección), se añaden los nuevos y se quitan los que ya no están.
+    /// </summary>
+    private (int added, int removed) MergeScan(List<GameEntry> scanned)
+    {
+        var current = AllGames.GroupBy(g => PathUtil.Norm(g.FolderPath)).ToDictionary(x => x.Key, x => x.First());
+        var result = new List<GameEntry>(scanned.Count);
+        int added = 0;
+        foreach (var s in scanned)
+        {
+            var key = PathUtil.Norm(s.FolderPath);
+            if (current.Remove(key, out var existing)) { existing.CopyFrom(s); result.Add(existing); }
+            else { result.Add(s); added++; }
+        }
+        // no quitar un juego que se está actualizando o ejecutando aunque la carpeta haya desaparecido un momento
+        var removed = 0;
+        foreach (var gone in current.Values)
+        {
+            if (gone.IsUpdating || gone.IsRunning) result.Add(gone);
+            else removed++;
+        }
+        var ordered = result.OrderBy(g => g.System, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        if (added > 0 || removed > 0 || !ordered.SequenceEqual(AllGames)) AllGames.ReplaceAll(ordered);
+        return (added, removed);
+    }
+
+    private System.Threading.Timer? _cacheSaveTimer;
+
+    /// <summary>Guarda la caché (con un pequeño retardo para agrupar cambios seguidos).</summary>
+    public void SaveLibraryCache()
+    {
+        var snapshot = AllGames.ToList();
+        var root = Config.RootPath;
+        _cacheSaveTimer?.Dispose();
+        _cacheSaveTimer = new System.Threading.Timer(_ => LibraryCacheService.Save(snapshot, root), null, 1500, Timeout.Infinite);
     }
 
     // ------------------------------------------------------------------ actualización de RecompVault
