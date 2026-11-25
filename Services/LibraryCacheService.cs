@@ -14,6 +14,7 @@ public static class LibraryCacheService
     private const int FormatVersion = 1;
     public static readonly string FilePath = Path.Combine(ConfigService.Dir, "library_cache.json");
     private static readonly object FileLock = new();
+    private static readonly JsonSerializerOptions Json = new() { WriteIndented = false, PropertyNameCaseInsensitive = true };
 
     public sealed class CacheFile
     {
@@ -78,7 +79,7 @@ public static class LibraryCacheService
                     CoverPath = g.CoverPath, DirStampTicks = g.DirStampTicks
                 }).ToList()
             };
-            var json = JsonSerializer.Serialize(file, JsonUtil.Options);
+            var json = JsonSerializer.Serialize(file, Json);
             lock (FileLock)
             {
                 Directory.CreateDirectory(ConfigService.Dir);
@@ -100,7 +101,7 @@ public static class LibraryCacheService
             lock (FileLock)
             {
                 if (!File.Exists(FilePath)) return new();
-                file = JsonSerializer.Deserialize<CacheFile>(File.ReadAllText(FilePath), JsonUtil.Options);
+                file = JsonSerializer.Deserialize<CacheFile>(File.ReadAllText(FilePath), Json);
             }
             if (file == null || file.Format != FormatVersion || PathUtil.Norm(file.RootPath) != PathUtil.Norm(root)) return new();
             var list = new List<GameEntry>(file.Games.Count);
