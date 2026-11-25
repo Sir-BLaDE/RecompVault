@@ -1239,6 +1239,11 @@ public class MainViewModel : INotifyPropertyChanged
     {
         if (_autoUpdating) return;
         var candidates = AllGames.Where(g => g.HasUpdate && !string.IsNullOrWhiteSpace(g.UpdateAssetUrl) && !g.IsUpdating).ToList();
+        // Los instaladores (Setup.exe, .msi) nunca se lanzan solos: se descargarían y abrirían en cada comprobación.
+        var installers = candidates.Where(IsInstallerUpdate).ToList();
+        candidates = candidates.Except(installers).ToList();
+        if (installers.Count > 0)
+            Log.Info($"Auto-update omitido en {installers.Count} juegos que solo publican instalador: {string.Join(", ", installers.Select(x => x.Name))}");
         // Solo vínculos seguros: una coincidencia aproximada puede ser otro juego.
         var fuzzy = candidates.Where(g => g.IsFuzzyLink).ToList();
         var list = candidates.Except(fuzzy).ToList();
@@ -1247,6 +1252,7 @@ public class MainViewModel : INotifyPropertyChanged
         if (list.Count == 0)
         {
             if (fuzzy.Count > 0) Status = $"{fuzzy.Count} actualizaciones no se instalan solas porque su vínculo es aproximado. Revísalas en 🔍 Revisar detección.";
+            else if (installers.Count > 0) Status = $"{installers.Count} actualizaciones son instaladores y no se aplican solas ({string.Join(", ", installers.Take(3).Select(x => x.Name))}): usa ⟳ en su tarjeta.";
             return;
         }
         _autoUpdating = true;
@@ -1261,7 +1267,8 @@ public class MainViewModel : INotifyPropertyChanged
                 UiThread.Run(() => { g.IsUpdating = true; Status = $"Auto-actualizando ({n}/{list.Count}) {g.Name}..."; });
                 var cts = BeginUpdateCts(g);
                 var res = await UpdateService.UpdateAsync(g, Config, new Progress<string>(s => UiThread.Run(() => Status = $"({n}/{list.Count}) {s}")), cts.Token);
-                if (res.Ok) ok++; else if (!cts.IsCancellationRequested) failed.Add($"• {g.Name}: {res.Message}");
+                if (res.Ok) ok++;
+                else if (!cts.IsCancellationRequested) { failed.Add($"• {g.Name}: {res.Message}"); Log.Warn($"Auto-update fallido {g.Name}: {res.Message}"); }
                 UiThread.Run(() => { EndUpdateCts(g); g.IsUpdating = false; });
             }
             UiThread.Run(() =>
@@ -1273,6 +1280,13 @@ public class MainViewModel : INotifyPropertyChanged
                 if (failed.Count > 0) DialogService.Info("Auto-actualización", $"Actualizados {ok} de {list.Count}.\n\nFallidos:\n{string.Join("\n", failed.Take(10))}");
             });
         });
+    }
+
+    private static bool IsInstallerUpdate(GameEntry g)
+    {
+        var name = g.UpdateAssetName;
+        if (string.IsNullOrWhiteSpace(name) && Uri.TryCreate(g.UpdateAssetUrl, UriKind.Absolute, out var u)) name = Path.GetFileName(u.AbsolutePath);
+        return !string.IsNullOrWhiteSpace(name) && ReleaseAssetPicker.IsInstaller(name!);
     }
 
     private void RaiseUpdateCounts()
