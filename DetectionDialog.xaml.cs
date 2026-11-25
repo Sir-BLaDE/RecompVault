@@ -141,6 +141,23 @@ public partial class DetectionDialog : Window
                 SuggestPanel.Visibility = Visibility.Visible;
             }
         }
+        // sin sugerencia de Quiver: The Gaming Emporium
+        if (_suggested == null && string.IsNullOrWhiteSpace(_g.Repository))
+        {
+            var emp = EmporiumService.Entries(_cfg);
+            if (emp.Count > 0)
+            {
+                var m = EmporiumCatalog.Match(emp, _g.FolderPath, _g.System);
+                var cands = m != null ? new List<EmporiumEntry> { m.Entry } : EmporiumCatalog.Candidates(emp, _g.FolderPath, _g.System, _g.Name, 3);
+                if (cands.Count > 0)
+                {
+                    _suggestedEmporium = cands[0];
+                    SuggestText.Text = $"Sugerencia (Gaming Emporium{(m != null ? ", " + m.Kind : "")}): {cands[0].Title} — {cands[0].Repository}" +
+                        (cands.Count > 1 ? "\nOtros: " + string.Join(" · ", cands.Skip(1).Select(c => $"{c.Title} ({c.Repository})")) : "");
+                    SuggestPanel.Visibility = Visibility.Visible;
+                }
+            }
+        }
 
         RepoBox.Text = _g.Repository ?? "";
         ProviderBox.SelectedIndex = string.Equals(_g.Provider, "gitlab", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
@@ -210,8 +227,16 @@ public partial class DetectionDialog : Window
 
     private QuiverApp? _suggested;
 
+    private EmporiumEntry? _suggestedEmporium;
+
     private void UseSuggestion_Click(object sender, RoutedEventArgs e)
     {
+        if (_suggested == null && _suggestedEmporium != null)
+        {
+            RepoBox.Text = _suggestedEmporium.Repository;
+            ProviderBox.SelectedIndex = _suggestedEmporium.Provider == "gitlab" ? 1 : 0;
+            return;
+        }
         if (_suggested == null) return;
         QuiverFilterBox.Text = "";
         QuiverBox.SelectedItem = _quiverOptions.FirstOrDefault(o => ReferenceEquals(o.App, _suggested));

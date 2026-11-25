@@ -434,7 +434,7 @@ public class MainViewModel : INotifyPropertyChanged
         var dlg = new SettingsDialog(Config) { Owner = ActiveOwner() };
         if (dlg.ShowDialog() != true) return;
         OnPropertyChanged(nameof(AutoUpdateLabel));
-        if (dlg.NeedsRescan) Rescan();
+        if (dlg.NeedsRescan || dlg.EmporiumChanged) Rescan();
         else Status = "Ajustes guardados.";
     }
 
@@ -660,7 +660,7 @@ public class MainViewModel : INotifyPropertyChanged
                 {
                     CheckAllUpdates(silent: true);
                 }
-                if (afterStartup) StartAppUpdateChecks();
+                if (afterStartup) { StartAppUpdateChecks(); RefreshEmporiumInBackground(); }
                 SaveLibraryCache();
             });
         }, cts.Token);
@@ -691,6 +691,26 @@ public class MainViewModel : INotifyPropertyChanged
         var ordered = result.OrderBy(g => g.System, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase).ToList();
         if (added > 0 || removed > 0 || !ordered.SequenceEqual(AllGames)) AllGames.ReplaceAll(ordered);
         return (added, removed);
+    }
+
+    /// <summary>Actualiza el catálogo de Gaming Emporium (una vez al día) y, si cambió, vuelve a emparejar.</summary>
+    private void RefreshEmporiumInBackground()
+    {
+        if (!Config.UseEmporium || !EmporiumService.IsStale(Config)) return;
+        Task.Run(async () =>
+        {
+            try
+            {
+                var (changed, error) = await EmporiumService.RefreshAsync(Config, force: false);
+                if (error != null) { UiThread.Run(() => Status = "Gaming Emporium no disponible: " + error); return; }
+                if (changed) UiThread.Run(() =>
+                {
+                    Status = $"Catálogo de Gaming Emporium actualizado ({EmporiumService.Entries(Config).Count} proyectos). Revisando vínculos...";
+                    Rescan();
+                });
+            }
+            catch (Exception ex) { Log.Warn("Gaming Emporium: " + ex.Message); }
+        });
     }
 
     private System.Threading.Timer? _cacheSaveTimer;

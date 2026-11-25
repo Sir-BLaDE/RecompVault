@@ -129,6 +129,14 @@ GitHub Actions compila en cada push y publica `RecompVault.exe` como artefacto (
 avisa con las notas del release y el botón **Abrir GitHub** lleva a la página de descarga (no se actualiza solo).
 **Omitir esta versión** deja de avisar con diálogo hasta la siguiente. Se puede desactivar o comprobar a mano en ⚙ Ajustes → RecompVault.
 
+**The Gaming Emporium:** además de Quiver, RecompVault usa el catálogo de [thegamingemporium.com](https://thegamingemporium.com)
+(categorías de decompilaciones/recompilaciones, ports de consola a PC y open source; unos 1.400 proyectos con
+repositorio en GitHub/GitLab) para vincular lo que Quiver no conoce. Se descarga una vez al día en segundo plano y
+se guarda en `%APPDATA%\RecompVault\emporium_catalog.json`. Solo se vincula solo con pruebas fuertes: el enlace al
+repositorio aparece en los archivos de la carpeta, o la carpeta o un ejecutable se llaman como el repositorio, y la
+plataforma original coincide con la del sistema. Si solo coincide el título, aparece como sugerencia en ℹ (o se vincula
+como aproximada si está activada la opción, sin auto-actualizarse). En 🔍 Revisar hay un filtro "Vinculados por Gaming Emporium".
+
 **Arranque rápido:** RecompVault guarda la biblioteca en `%APPDATA%\RecompVault\library_cache.json`. Al abrirlo
 muestra esa copia al instante, carga las portadas en segundo plano y después busca solo los cambios: juegos
 nuevos, borrados o actualizados. Las carpetas que no han cambiado no se vuelven a recorrer. **F5** busca cambios

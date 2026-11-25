@@ -21,6 +21,8 @@ public class AppConfig
     public double WindowHeight { get; set; } = 800;
     public bool WindowMaximized { get; set; }
     public bool CompactSystems { get; set; }
+    /// <summary>Usar el catálogo de thegamingemporium.com para vincular recomps que Quiver no conoce.</summary>
+    public bool UseEmporium { get; set; } = true;
     /// <summary>Comprobar al arrancar (y cada 6 h) si hay una versión nueva de RecompVault en GitHub.</summary>
     public bool CheckAppUpdates { get; set; } = true;
     /// <summary>Versión de RecompVault que el usuario decidió omitir (no se vuelve a avisar con diálogo).</summary>

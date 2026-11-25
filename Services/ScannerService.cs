@@ -174,6 +174,22 @@ public static class ScannerService
             }
         }
 
+        // The Gaming Emporium: solo para lo que Quiver no ha vinculado
+        var emporium = EmporiumService.Entries(cfg);
+        if (emporium.Count > 0)
+        {
+            foreach (var g in result)
+            {
+                if (!string.IsNullOrWhiteSpace(g.Repository)) continue;
+                var m = EmporiumCatalog.Match(emporium, g.FolderPath, g.System);
+                if (m == null || (m.Approximate && !cfg.FuzzyQuiverMatching)) continue;
+                g.Repository = m.Entry.Repository;
+                g.Provider = m.Entry.Provider;
+                g.LinkSource = "Gaming Emporium: " + m.Kind + (m.Approximate ? " (aproximada)" : "");
+                Log.Info($"Gaming Emporium: {g.FolderPath} → {m.Entry.Title} [{m.Entry.Repository}] ({m.Kind})");
+            }
+        }
+
         foreach (var g in result)
         {
             QuiverService.ApplyLinkOverride(g, quiver, cfg);

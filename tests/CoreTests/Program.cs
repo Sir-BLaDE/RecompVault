@@ -186,6 +186,37 @@ Check("título núcleo conserva números", QuiverMatcher.CoreTitle("Ridge_Racer_
 Check("título núcleo: colección no es el juego", QuiverMatcher.CoreTitle("Ridge Racer Collection") != QuiverMatcher.CoreTitle("Ridge Racer"));
 Check("título núcleo iguala nombres equivalentes", QuiverMatcher.CoreTitle("Super Mario World") == QuiverMatcher.CoreTitle("SuperMarioWorldRecomp-windows-x64-v0.9.5"));
 
+// ---- The Gaming Emporium
+{
+    var card = @"<div class=""game-card game-card--decomp-list"" data-favourite-id=""mm"" data-title=""The Legend of Zelda: Majora&#39;s Mask Recompilation"" data-genres=""RPG|Action"" data-category=""decompilations-recompilations"" data-platform=""Nintendo 64"" data-release-platforms=""linux|macos|windows|"">
+  <button></button><a class=""game-card__link"" href=""https://github.com/Zelda64Recomp/Zelda64Recomp"" target=""_blank"">x</a></div>
+<div class=""game-card"" data-title=""Some Launcher"" data-genres=""Utility"" data-category=""decompilations-recompilations"" data-platform="""" data-release-platforms=""windows|""><a class=""game-card__link"" href=""https://github.com/foo/launcher/releases/tag/v1"">x</a></div>
+<div class=""game-card"" data-title=""Itch Game"" data-category=""fan-games""><a class=""game-card__link"" href=""https://foo.itch.io/game"">x</a></div>
+<div class=""game-card"" data-title=""Takedawn"" data-genres=""Racing"" data-category=""decompilations-recompilations"" data-platform=""Xbox"" data-release-platforms=""windows|""><a class=""game-card__link"" href=""https://github.com/xenophobentx/takedawn.git"">x</a></div>";
+    var em = EmporiumCatalog.ParseCategoryPage(card);
+    Check("emporium: solo tarjetas con repositorio", em.Count == 3);
+    Check("emporium: título decodificado", em[0].Title == "The Legend of Zelda: Majora's Mask Recompilation");
+    Check("emporium: repo de enlace a release", em[1].Repository == "foo/launcher" && em[1].IsUtility);
+    Check("emporium: .git fuera", em[2].Repository == "xenophobentx/takedawn");
+    Check("emporium: parse gitlab", EmporiumCatalog.ParseRepo("https://gitlab.com/onerag90/fe3h-recomp/-/releases")?.repo == "onerag90/fe3h-recomp");
+    Check("emporium: no es repo", EmporiumCatalog.ParseRepo("https://github.com/orgs/foo/repositories") == null);
+
+    var tmpE = Path.Combine(Path.GetTempPath(), "rv-emp-" + Guid.NewGuid().ToString("N"));
+    var dTake = Directory.CreateDirectory(Path.Combine(tmpE, "XBOX", "B3")).FullName;
+    File.WriteAllBytes(Path.Combine(dTake, "Takedawn.exe"), new byte[] { 0x4D, 0x5A });
+    var mTake = EmporiumCatalog.Match(em, dTake, "XBOX");
+    Check("emporium: exe con el nombre del repo", mTake?.Entry.Repository == "xenophobentx/takedawn" && !mTake.Approximate);
+    var dMm = Directory.CreateDirectory(Path.Combine(tmpE, "N64", "The Legend of Zelda Majoras Mask")).FullName;
+    var mMm = EmporiumCatalog.Match(em, dMm, "N64");
+    Check("emporium: por título es aproximada", mMm?.Entry.Repository == "Zelda64Recomp/Zelda64Recomp" && mMm.Approximate == true);
+    Check("emporium: plataforma distinta descarta", EmporiumCatalog.Match(em, dMm, "PSX") == null);
+    var dRd = Directory.CreateDirectory(Path.Combine(tmpE, "N64", "Juego")).FullName;
+    File.WriteAllText(Path.Combine(dRd, "README.txt"), "Download from https://github.com/Zelda64Recomp/Zelda64Recomp/releases");
+    var mRd = EmporiumCatalog.Match(em, dRd, "N64");
+    Check("emporium: enlace en README", mRd?.Kind.StartsWith("enlace") == true && !mRd.Approximate);
+    try { Directory.Delete(tmpE, true); } catch { }
+}
+
 // ---------------------------------------------------------------- ficheros protegidos
 Check("glob *.ini en subcarpeta", GlobMatcher.IsMatch(@"cfg\game.ini", "*.ini"));
 Check("glob carpeta/**", GlobMatcher.IsMatch("saves/slot1/a.bin", "saves/**") && GlobMatcher.IsMatch(@"Saves\x.dat", "saves/**"));

@@ -57,6 +57,7 @@
                 <ComboBoxItem Content="Actualizados por RecompVault antiguo" Tag="oldrv"/>
                 <ComboBoxItem Content="Sin ejecutable" Tag="noexe"/>
                 <ComboBoxItem Content="Versión fijada" Tag="pinned"/>
+                <ComboBoxItem Content="Vinculados por Gaming Emporium" Tag="emporium"/>
                 <ComboBoxItem Content="Sin verificar por huella (vinculados)" Tag="unverified"/>
                 <ComboBoxItem Content="✖ Huella no coincide" Tag="fpbad"/>
             </ComboBox>

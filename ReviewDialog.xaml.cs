@@ -48,6 +48,7 @@ public partial class ReviewDialog : Window
             "oldrv" => list.Where(g => g.UpdatedByOldVersion),
             "noexe" => list.Where(g => string.IsNullOrWhiteSpace(g.LaunchPath)),
             "pinned" => list.Where(g => g.IsPinned),
+            "emporium" => list.Where(g => g.LinkSource.StartsWith("Gaming Emporium", StringComparison.Ordinal)),
             "unverified" => list.Where(g => !string.IsNullOrWhiteSpace(g.Repository) && !g.LinkSource.StartsWith("Verificado")),
             "fpbad" => list.Where(g => g.Fingerprint.StartsWith("✖")),
             _ => list
