@@ -502,9 +502,13 @@ public static class UpdateService
             if (ReleaseAssetPicker.IsInstaller(name))
             {
                 // Un instalador no se puede aplicar en silencio: se deja en la carpeta y se abre.
-                var dest = Path.Combine(g.UpdateDir, name);
+                // fuera de la carpeta del juego, para no dejar instaladores de cientos de MB dentro
+                var instDir = Path.Combine(Path.GetTempPath(), "RecompVault-instaladores");
+                Directory.CreateDirectory(instDir);
+                var dest = Path.Combine(instDir, name);
                 File.Copy(downloadPath, dest, true);
-                try { Process.Start(new ProcessStartInfo { FileName = dest, WorkingDirectory = g.UpdateDir, UseShellExecute = true }); } catch { }
+                try { Process.Start(new ProcessStartInfo { FileName = dest, WorkingDirectory = instDir, UseShellExecute = true }); } catch { }
+                Log.Info($"Instalador abierto para {g.Name} {version}: {dest}");
                 return new UpdateOutcome(false, $"Es un instalador ({name}); se ha abierto para que lo completes. La versión se marcará cuando vuelvas a comprobar.", Manual: true);
             }
 
