@@ -239,6 +239,41 @@ public class GameEntry : INotifyPropertyChanged
     /// <summary>Vuelve a evaluar CanLaunch (p.ej. tras actualizar ficheros en disco).</summary>
     public void RefreshLaunchState() => OnPropertyChanged(nameof(CanLaunch));
 
+    // ------------------------------------------------------------------ caché de biblioteca
+
+    /// <summary>Ruta de la portada mostrada (para no volver a decodificarla si no cambia).</summary>
+    public string? CoverPath { get; set; }
+    /// <summary>Fecha de modificación de la carpeta del juego en el último escaneo (detecta cambios sin recorrerla).</summary>
+    public long DirStampTicks { get; set; }
+
+    /// <summary>
+    /// Copia en este objeto lo que ha encontrado un escaneo nuevo, sin cambiar la instancia
+    /// (la selección, la tarjeta y el estado "en ejecución / actualizando" se conservan).
+    /// </summary>
+    public void CopyFrom(GameEntry s)
+    {
+        if (IsUpdating) return; // no pisar una actualización en curso
+        Name = s.Name; RecompName = s.RecompName; System = s.System; LaunchPath = s.LaunchPath;
+        NameFromTitleMap = s.NameFromTitleMap; NameSource = s.NameSource; LaunchSource = s.LaunchSource;
+        Favorite = s.Favorite; IsHidden = s.IsHidden; IsExternal = s.IsExternal;
+        if (s.LastPlayed > LastPlayed) LastPlayed = s.LastPlayed;
+        if (s.PlaySeconds > PlaySeconds) PlaySeconds = s.PlaySeconds;
+        Repository = s.Repository; Provider = s.Provider; Project = s.Project; QuiverFolderName = s.QuiverFolderName;
+        InstallDir = s.InstallDir; QuiverAppIconUrl = s.QuiverAppIconUrl; QuiverLocalIconPath = s.QuiverLocalIconPath;
+        AssetFilter = s.AssetFilter; InstalledAssetName = s.InstalledAssetName;
+        InstalledVersion = s.InstalledVersion; PinnedVersion = s.PinnedVersion;
+        // la última versión conocida solo avanza (puede venir de GitHub en esta sesión)
+        if (string.IsNullOrWhiteSpace(LatestVersion) || VersionUtil.IsNewer(s.LatestVersion, LatestVersion) || string.IsNullOrWhiteSpace(Repository))
+            LatestVersion = s.LatestVersion;
+        LinkSource = s.LinkSource; HasUndo = s.HasUndo; UpdatedByOldVersion = s.UpdatedByOldVersion;
+        if (!string.IsNullOrEmpty(s.Fingerprint)) Fingerprint = s.Fingerprint;
+        DirStampTicks = s.DirStampTicks;
+        if (s.CoverPath != CoverPath || (s.CoverImage != null && CoverImage == null)) { CoverPath = s.CoverPath; CoverImage = s.CoverImage; }
+        if (s.LogoImage != null || string.IsNullOrEmpty(LaunchPath)) LogoImage = s.LogoImage;
+        RaiseDetectionChanged();
+        RefreshLaunchState();
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 

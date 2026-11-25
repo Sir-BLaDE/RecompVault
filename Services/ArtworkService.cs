@@ -117,7 +117,7 @@ public static class ArtworkService
     /// el icono del ejecutable como logo. Seguro desde hilos de fondo.
     /// </summary>
     /// <param name="detached">true si la entrada aún no está enlazada a la interfaz (escaneo): se asigna sin pasar por el Dispatcher.</param>
-    public static void Apply(GameEntry g, AppConfig cfg, bool detached = false)
+    public static void Apply(GameEntry g, AppConfig cfg, bool detached = false, GameEntry? reuse = null)
     {
         string? coverPath = null;
         var ov = ConfigService.Get(cfg.CoverOverrides, g.FolderPath);
@@ -126,9 +126,13 @@ public static class ArtworkService
         if (coverPath == null && !string.IsNullOrWhiteSpace(g.QuiverLocalIconPath) && File.Exists(g.QuiverLocalIconPath))
             coverPath = g.QuiverLocalIconPath;
 
-        var cover = coverPath != null ? ImageLoader.Load(coverPath) : null;
+        // lo que ya está cargado y no ha cambiado se reutiliza (las imágenes están congeladas, se pueden compartir)
+        var sameCover = reuse?.CoverImage != null && string.Equals(reuse.CoverPath, coverPath, StringComparison.OrdinalIgnoreCase);
+        var cover = sameCover ? reuse!.CoverImage : coverPath != null ? ImageLoader.Load(coverPath) : null;
         ImageSource? logo = null;
-        if (!string.IsNullOrWhiteSpace(g.LaunchPath) && File.Exists(g.LaunchPath) &&
+        if (reuse?.LogoImage != null && string.Equals(reuse.LaunchPath, g.LaunchPath, StringComparison.OrdinalIgnoreCase))
+            logo = reuse.LogoImage;
+        else if (!string.IsNullOrWhiteSpace(g.LaunchPath) && File.Exists(g.LaunchPath) &&
             g.LaunchPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
         {
             try { logo = ExtractIcon(g.LaunchPath); } catch { }
@@ -136,6 +140,7 @@ public static class ArtworkService
         void Set()
         {
             if (cover != null || coverPath == null) g.CoverImage = cover;
+            g.CoverPath = coverPath;
             g.LogoImage = logo;
         }
         if (detached) Set(); else UiThread.RunSync(Set);

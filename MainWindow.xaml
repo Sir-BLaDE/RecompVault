@@ -517,7 +517,7 @@
                 <Button Content="Q" Style="{StaticResource ToolButton}" Command="{Binding SyncQuiverCommand}" ToolTip="Sincronizar con Quiver"/>
                 <Button Content="⬇" Style="{StaticResource ToolButton}" Command="{Binding DownloadAllCoversCommand}" ToolTip="Descargar portadas que faltan"/>
                 <Button Content="↶" Style="{StaticResource ToolButton}" Command="{Binding UndoManagerCommand}" ToolTip="Copias de deshacer"/>
-                <Button Content="⟳" Style="{StaticResource ToolButton}" Command="{Binding RescanCommand}" ToolTip="Re-escanear la biblioteca"/>
+                <Button Content="⟳" Style="{StaticResource ToolButton}" Command="{Binding RescanCommand}" ToolTip="Buscar cambios en la biblioteca (F5) · Ctrl+clic o Ctrl+F5: escanear desde cero"/>
                 <Button Content="📁" Style="{StaticResource ToolButton}" Click="OpenRoot_Click" ToolTip="Abrir la carpeta raíz"/>
                 <Button Content="📄" Style="{StaticResource ToolButton}" Command="{Binding OpenLogCommand}" ToolTip="Registro"/>
                 <Button Content="⚙" Style="{StaticResource ToolButton}" Command="{Binding SettingsCommand}" ToolTip="Ajustes"/>

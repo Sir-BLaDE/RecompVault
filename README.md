@@ -129,6 +129,11 @@ GitHub Actions compila en cada push y publica `RecompVault.exe` como artefacto (
 avisa con las notas del release y el botón **Abrir GitHub** lleva a la página de descarga (no se actualiza solo).
 **Omitir esta versión** deja de avisar con diálogo hasta la siguiente. Se puede desactivar o comprobar a mano en ⚙ Ajustes → RecompVault.
 
+**Arranque rápido:** RecompVault guarda la biblioteca en `%APPDATA%\RecompVault\library_cache.json`. Al abrirlo
+muestra esa copia al instante, carga las portadas en segundo plano y después busca solo los cambios: juegos
+nuevos, borrados o actualizados. Las carpetas que no han cambiado no se vuelven a recorrer. **F5** busca cambios
+y **Ctrl+F5** (o Ctrl+clic en ⟳) escanea desde cero.
+
 **Publicar una versión:** sube `<Version>` en `RecompVault.csproj` (p. ej. `2.0.1`) y llévalo a
 `main`. El workflow `release` crea la etiqueta `v2.0.1` y la release con el `.exe` si aún no
 existe. También funciona subiendo a mano una etiqueta `vX.Y.Z`.

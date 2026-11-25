@@ -78,7 +78,33 @@ public static class ScannerService
         return k.Length >= 4 && _titleMapByKey!.TryGetValue(k, out t) ? t : null;
     }
 
-    public static List<GameEntry> Scan(string root, AppConfig cfg, QuiverLibrary? quiver)
+    /// <param name="previous">Juegos del escaneo anterior (o de la caché) por ruta normalizada: las carpetas
+    /// que no han cambiado reutilizan ejecutable, portada e icono sin volver a recorrerlas.</param>
+    public static List<GameEntry> Scan(string root, AppConfig cfg, QuiverLibrary? quiver, IReadOnlyDictionary<string, GameEntry>? previous = null)
+    {
+        _prev = previous;
+        try { return ScanCore(root, cfg, quiver); }
+        finally { _prev = null; }
+    }
+
+    [ThreadStatic] private static IReadOnlyDictionary<string, GameEntry>? _prev;
+
+    private static long DirStamp(string dir)
+    {
+        try { return Directory.GetLastWriteTimeUtc(dir).Ticks; } catch { return 0; }
+    }
+
+    /// <summary>Entrada anterior de esa carpeta si la carpeta no ha cambiado desde entonces.</summary>
+    private static GameEntry? Unchanged(string dir)
+    {
+        if (_prev == null || !_prev.TryGetValue(PathUtil.Norm(dir), out var p)) return null;
+        return p.DirStampTicks != 0 && p.DirStampTicks == DirStamp(dir) ? p : null;
+    }
+
+    private static GameEntry? Previous(string dir) =>
+        _prev != null && _prev.TryGetValue(PathUtil.Norm(dir), out var p) ? p : null;
+
+    private static List<GameEntry> ScanCore(string root, AppConfig cfg, QuiverLibrary? quiver)
     {
         var result = new List<GameEntry>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -166,7 +192,7 @@ public static class ScannerService
             if (quiverLp.HasValue && quiverLp.Value > g.LastPlayed) g.LastPlayed = quiverLp.Value;
             var custom = ConfigService.Get(cfg.NameOverrides, g.FolderPath);
             if (!string.IsNullOrWhiteSpace(custom)) { g.Name = custom.Trim(); g.NameSource = "Manual"; }
-            ArtworkService.Apply(g, cfg, detached: true);
+            ArtworkService.Apply(g, cfg, detached: true, reuse: Previous(g.FolderPath));
         }
 
         return result.OrderBy(g => g.System, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase).ToList();
@@ -186,7 +212,7 @@ public static class ScannerService
             var name = Path.GetFileName(dir);
             if (IsSkippedDir(name)) continue;
 
-            if (LaunchPicker.HasExecutable(dir, 3) || HasQuiverMarker(dir)) { games.Add(dir); continue; }
+            if (Unchanged(dir) != null || LaunchPicker.HasExecutable(dir, 3) || HasQuiverMarker(dir)) { games.Add(dir); continue; }
 
             var nested = Safe(() => Directory.GetDirectories(dir)).Where(d => !IsSkippedDir(Path.GetFileName(d)) && LaunchPicker.HasExecutable(d, 3)).ToList();
             if (nested.Count >= 2) games.AddRange(nested);           // grupo de juegos
@@ -218,7 +244,8 @@ public static class ScannerService
     private static GameEntry? CreateEntry(string gameDir, string sysName, AppConfig cfg, bool allowEmpty = true)
     {
         var folderName = Path.GetFileName(gameDir.TrimEnd('\\', '/'));
-        var (launch, launchSource) = ResolveLaunchWithSource(gameDir, folderName, cfg);
+        var stamp = DirStamp(gameDir);
+        var (launch, launchSource) = ResolveLaunchWithSource(gameDir, folderName, cfg, Unchanged(gameDir));
         if (string.IsNullOrEmpty(launch) && (!allowEmpty || !HasAnyContent(gameDir))) return null;
 
         var mapped = MappedTitle(folderName);
@@ -232,6 +259,7 @@ public static class ScannerService
             System = sysName,
             FolderPath = gameDir,
             LaunchPath = launch,
+            DirStampTicks = stamp,
         };
         entry.InstalledVersion = UpdateService.ReadInstalledVersion(gameDir) ?? "";
         entry.InstalledAssetName = UpdateService.ReadInstalledAssetName(gameDir);
@@ -241,7 +269,7 @@ public static class ScannerService
     /// <summary>Ejecutable: elegido por el usuario aquí → elegido en Quiver (selected_executable.txt) → heurística.</summary>
     public static string ResolveLaunch(string gameDir, string folderName, AppConfig cfg) => ResolveLaunchWithSource(gameDir, folderName, cfg).path;
 
-    public static (string path, string source) ResolveLaunchWithSource(string gameDir, string folderName, AppConfig cfg)
+    public static (string path, string source) ResolveLaunchWithSource(string gameDir, string folderName, AppConfig cfg, GameEntry? unchanged = null)
     {
         var ov = ConfigService.Get(cfg.LaunchOverrides, gameDir);
         if (ov != null && File.Exists(ov)) return (ov, "Manual");
@@ -259,6 +287,10 @@ public static class ScannerService
             }
         }
         catch { }
+        // carpeta sin cambios: el ejecutable elegido automáticamente la otra vez sigue valiendo
+        if (unchanged != null && unchanged.LaunchSource.StartsWith("Automático", StringComparison.Ordinal) &&
+            unchanged.LaunchPath.Length > 0 && File.Exists(unchanged.LaunchPath))
+            return (unchanged.LaunchPath, unchanged.LaunchSource);
         var picked = LaunchPicker.Pick(gameDir, folderName);
         return (picked, picked.Length > 0 ? "Automático (mejor puntuación)" : "No encontrado");
     }

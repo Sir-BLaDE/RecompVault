@@ -58,7 +58,7 @@ public partial class MainWindow : Window
             DialogService.Info("Carpeta de juegos", $"No existe la carpeta raíz configurada:\n{_vm.Config.RootPath}\n\nElige la carpeta que contiene las subcarpetas por sistema (N64, PSX, X360...).");
             PickRoot();
         }
-        _vm.Rescan(afterStartup: true);
+        _vm.Startup();
         _pad.Start();
     }
 
@@ -280,6 +280,7 @@ public partial class MainWindow : Window
     {
         if (AllSystemsPopup.IsOpen) return; // el popup gestiona sus propias teclas
         if (e.Key == Key.F11) { ToggleCouch(); e.Handled = true; return; }
+        if (e.Key == Key.F5) { _vm.Rescan(full: Keyboard.Modifiers.HasFlag(ModifierKeys.Control)); e.Handled = true; return; }
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; return; }
 
         var inText = Keyboard.FocusedElement is TextBox or ComboBox or ComboBoxItem;
@@ -397,6 +398,7 @@ public partial class MainWindow : Window
     {
         _pad.Dispose();
         StopSysAnimation();
+        if (_vm.AllGames.Count > 0 && !_vm.IsBusy) LibraryCacheService.Save(_vm.AllGames.ToList(), _vm.Config.RootPath);
         if (_vm.IsCouchMode) { RootGrid.LayoutTransform = Transform.Identity; WindowStyle = WindowStyle.SingleBorderWindow; }
         ConfigService.Update(_vm.Config, c =>
         {
