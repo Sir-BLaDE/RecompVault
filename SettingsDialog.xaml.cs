@@ -34,6 +34,8 @@ public partial class SettingsDialog : Window
             QuiverBox.Text = cfg.QuiverPath;
             ExternalBox.IsChecked = cfg.IncludeQuiverAppsOutsideRoot;
             FuzzyBox.IsChecked = cfg.FuzzyQuiverMatching;
+            EmporiumBox.IsChecked = cfg.UseEmporium;
+            UpdateEmporiumText();
             AutoCheckBox.IsChecked = cfg.AutoCheckUpdates;
             CheckAppBox.IsChecked = cfg.CheckAppUpdates;
             AutoUpdateBox.IsChecked = cfg.AutoUpdateRecomps;
@@ -104,12 +106,14 @@ public partial class SettingsDialog : Window
                           !string.Equals(c.QuiverPath, quiver, StringComparison.OrdinalIgnoreCase) ||
                           c.QuiverSyncEnabled != (QuiverEnabledBox.IsChecked == true) ||
                           c.IncludeQuiverAppsOutsideRoot != (ExternalBox.IsChecked == true) ||
-                          c.FuzzyQuiverMatching != (FuzzyBox.IsChecked == true);
+                          c.FuzzyQuiverMatching != (FuzzyBox.IsChecked == true) ||
+                          c.UseEmporium != (EmporiumBox.IsChecked == true);
             c.RootPath = root;
             c.QuiverPath = QuiverLibrary.ResolveRoot(quiver) ?? quiver;
             c.QuiverSyncEnabled = QuiverEnabledBox.IsChecked == true;
             c.IncludeQuiverAppsOutsideRoot = ExternalBox.IsChecked == true;
             c.FuzzyQuiverMatching = FuzzyBox.IsChecked == true;
+            c.UseEmporium = EmporiumBox.IsChecked == true;
             c.AutoCheckUpdates = AutoCheckBox.IsChecked == true;
             c.CheckAppUpdates = CheckAppBox.IsChecked == true;
             c.AutoUpdateRecomps = AutoUpdateBox.IsChecked == true;
@@ -137,5 +141,31 @@ public partial class SettingsDialog : Window
         if (!r.IsNewer) { AppVersionText.Text += " · es la última"; return; }
         AppVersionText.Text += $" · disponible {r.Tag}";
         SelfUpdateService.Prompt(r, _cfg, manual: true);
+    }
+
+    private void UpdateEmporiumText()
+    {
+        var n = _cfg.UseEmporium ? EmporiumService.Entries(_cfg).Count : 0;
+        var when = EmporiumService.LastFetchUtc is { } d ? $" · actualizado el {d.ToLocalTime():dd/MM/yyyy HH:mm}" : "";
+        EmporiumText.Text = n > 0 ? $"{n} proyectos con repositorio{when}. Se actualiza solo una vez al día." : "Todavía no descargado: se descarga al arrancar o con el botón.";
+    }
+
+    private bool _emporiumChanged;
+    /// <summary>El catálogo de Gaming Emporium cambió desde aquí: hay que volver a emparejar.</summary>
+    public bool EmporiumChanged => _emporiumChanged;
+
+    private async void RefreshEmporium_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_cfg.UseEmporium && EmporiumBox.IsChecked != true) { EmporiumText.Text = "Activa la casilla para usar el catálogo."; return; }
+        if (!_cfg.UseEmporium) ConfigService.Update(_cfg, c => c.UseEmporium = true);
+        EmporiumText.Text = "Descargando el catálogo de thegamingemporium.com...";
+        try
+        {
+            var (changed, error) = await EmporiumService.RefreshAsync(_cfg, force: true);
+            _emporiumChanged |= changed;
+            UpdateEmporiumText();
+            if (error != null) EmporiumText.Text = "No se pudo descargar: " + error;
+        }
+        catch (Exception ex) { EmporiumText.Text = "No se pudo descargar: " + ex.Message; }
     }
 }

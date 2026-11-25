@@ -56,6 +56,11 @@
                 </DockPanel>
                 <TextBlock x:Name="QuiverHint" Text="Vacío = detectar automáticamente." Style="{StaticResource Hint}"/>
                 <CheckBox x:Name="ExternalBox" Content="Mostrar también las apps de Quiver instaladas fuera de la carpeta raíz"/>
+                <CheckBox x:Name="EmporiumBox" Content="Usar también el catálogo de The Gaming Emporium (thegamingemporium.com) para lo que Quiver no conoce"/>
+                <DockPanel Margin="22,0,0,6">
+                    <Button DockPanel.Dock="Right" Content="Actualizar catálogo" Style="{StaticResource GhostButton}" Padding="10,3" Click="RefreshEmporium_Click"/>
+                    <TextBlock x:Name="EmporiumText" Foreground="{StaticResource MutedBrush}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </DockPanel>
                 <CheckBox x:Name="FuzzyBox" Content="Vincular también por coincidencia aproximada (puede equivocarse; si no, aparecen como sugerencia en ℹ)"/>
 
                 <TextBlock Text="RECOMPVAULT" Style="{StaticResource Sec}"/>
