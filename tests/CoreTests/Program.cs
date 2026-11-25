@@ -185,6 +185,14 @@ Check("título núcleo quita plataforma y versión", QuiverMatcher.CoreTitle("Su
 Check("título núcleo conserva números", QuiverMatcher.CoreTitle("Ridge_Racer_4_Recomp_Windows") != QuiverMatcher.CoreTitle("Ridge Racer"));
 Check("título núcleo: colección no es el juego", QuiverMatcher.CoreTitle("Ridge Racer Collection") != QuiverMatcher.CoreTitle("Ridge Racer"));
 Check("título núcleo iguala nombres equivalentes", QuiverMatcher.CoreTitle("Super Mario World") == QuiverMatcher.CoreTitle("SuperMarioWorldRecomp-windows-x64-v0.9.5"));
+{
+    var mk8 = new[] { "build-ffmpeg.sh", "ffmpeg-9.0.2.tar.xz", "MK8-online-0.6.3-linux-x86_64.AppImage", "MK8-online-0.6.3-linux-x86_64.tar.gz",
+                      "MK8-online-0.6.3-portable.zip", "MK8-online-0.6.3-portable.zip.sha256", "MK8-online-0.6.3-setup.exe" }
+        .Select(n => new ReleaseAsset(n, "https://x/" + n)).ToList();
+    Check("portable.zip antes que setup.exe", ReleaseAssetPicker.Pick(mk8)?.Name == "MK8-online-0.6.3-portable.zip");
+    Check("solo instalador: se elige igual", ReleaseAssetPicker.Pick(new[] { new ReleaseAsset("Nebula-Beta-Setup.exe", "u"), new ReleaseAsset("Nebula-Beta-macOS.zip", "u") })?.Name == "Nebula-Beta-Setup.exe");
+    Check("instalador frente a zip de Windows", ReleaseAssetPicker.Pick(new[] { new ReleaseAsset("Game-Setup.exe", "u"), new ReleaseAsset("Game-windows-x64.zip", "u") })?.Name == "Game-windows-x64.zip");
+}
 
 // ---- The Gaming Emporium
 {

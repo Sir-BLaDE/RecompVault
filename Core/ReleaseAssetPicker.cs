@@ -71,7 +71,7 @@ public static class ReleaseAssetPicker
         if (n.Contains("arm64") || n.Contains("aarch64") || n.Contains("armv7")) score -= 50;
         if (n.Contains("x86") && !n.Contains("x86_64") && !n.Contains("x86-64")) score -= 10;
         if (n.Contains("debug") || n.Contains("-dbg")) score -= 25;
-        if (n.Contains("portable")) score += 8;
+        if (n.Contains("portable")) score += OtherOs.Any(n.Contains) ? 8 : 45; // "portable.zip" sin SO = paquete de Windows
         if (n.Contains("setup") || n.Contains("installer")) score -= 6;
         if (n.Contains("nosse") || n.Contains("legacy") || n.Contains("compat")) score -= 5;
         if (n.Contains("avx2") || n.Contains("avx512")) score -= 3;
@@ -81,6 +81,9 @@ public static class ReleaseAssetPicker
         else if (n.EndsWith(".7z")) score += 10;
         else if (n.EndsWith(".tar.gz") || n.EndsWith(".tgz")) score += 4;
         else if (n.EndsWith(".msi")) score += 2;
+
+        // Un instalador solo se elige si no hay otra cosa: no se puede aplicar solo, hay que pasar por su asistente.
+        if (IsInstaller(n)) return Math.Clamp(score, 0, 1);
 
         // Un paquete sin marca de SO puede ser válido (muchos recomps solo publican Windows),
         // pero solo si no hay nada mejor: score bajo pero >= 0.
