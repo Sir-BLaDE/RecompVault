@@ -233,6 +233,8 @@ public partial class DetectionDialog : Window
     {
         if (_suggested == null && _suggestedEmporium != null)
         {
+            // si estaba "(sin vincular)", pasar a automático para que el repositorio se guarde
+            if (QuiverBox.SelectedItem is Option { Value: var v } && v == None) QuiverBox.SelectedIndex = 0;
             RepoBox.Text = _suggestedEmporium.Repository;
             ProviderBox.SelectedIndex = _suggestedEmporium.Provider == "gitlab" ? 1 : 0;
             return;
@@ -343,7 +345,8 @@ public partial class DetectionDialog : Window
 
             // vínculo
             var detectedRepo = (_g.Repository ?? "").Trim('/');
-            if (quiver?.Value == None || (quiver?.App == null && repo.Length == 0 && detectedRepo.Length > 0))
+            // "(sin vincular)" con un repositorio escrito: manda el repositorio (el usuario lo acaba de poner)
+            if ((quiver?.Value == None && repo.Length == 0) || (quiver?.App == null && quiver?.Value != None && repo.Length == 0 && detectedRepo.Length > 0))
             {
                 c.LinkOverrides[_g.FolderPath] = new LinkOverride { Unlinked = true };
             }
